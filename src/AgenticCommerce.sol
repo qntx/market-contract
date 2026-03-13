@@ -30,7 +30,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
     IERC20 public immutable PAYMENT_TOKEN;
 
     /// @notice Platform fee in basis points (e.g. 250 = 2.5%).
-    uint256 public platformFeeBP;
+    uint256 public platformFeeBp;
 
     /// @notice Address that receives platform fees on job completion.
     address public treasury;
@@ -49,7 +49,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         Status status;
         address hook;
         bytes32 deliverable;
-        uint256 fundedFeeBP;
+        uint256 fundedFeeBp;
     }
 
     /// @dev jobId => JobStorage
@@ -91,25 +91,25 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
     /// @dev Hook external call failed or ran out of gas.
     error HookCallFailed();
 
-    event PlatformFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
+    event PlatformFeeUpdated(uint256 oldFeeBp, uint256 newFeeBp);
     event TreasuryUpdated(address oldTreasury, address newTreasury);
 
     /// @param paymentToken_ ERC-20 token used for escrow (immutable).
-    /// @param platformFeeBP_ Initial platform fee in basis points.
+    /// @param platformFeeBp_ Initial platform fee in basis points.
     /// @param treasury_ Address to receive platform fees.
     /// @param owner_ Initial contract owner (admin).
     constructor(
         address paymentToken_,
-        uint256 platformFeeBP_,
+        uint256 platformFeeBp_,
         address treasury_,
         address owner_
     ) Ownable(owner_) {
         if (paymentToken_ == address(0)) revert ZeroAddress();
         if (treasury_ == address(0)) revert ZeroAddress();
-        if (platformFeeBP_ > MAX_FEE_BP) revert FeeTooHigh();
+        if (platformFeeBp_ > MAX_FEE_BP) revert FeeTooHigh();
 
         PAYMENT_TOKEN = IERC20(paymentToken_);
-        platformFeeBP = platformFeeBP_;
+        platformFeeBp = platformFeeBp_;
         treasury = treasury_;
     }
 
@@ -156,7 +156,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
             status: Status.Open,
             hook: hook,
             deliverable: bytes32(0),
-            fundedFeeBP: 0
+            fundedFeeBp: 0
         });
 
         emit JobCreated(jobId, msg.sender, evaluator, provider, expiredAt, description, hook);
@@ -222,7 +222,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
 
         // Effects
         job.status = Status.Funded;
-        job.fundedFeeBP = platformFeeBP;
+        job.fundedFeeBp = platformFeeBp;
 
         // Interactions — pull tokens into escrow
         PAYMENT_TOKEN.safeTransferFrom(msg.sender, address(this), job.budget);
@@ -272,7 +272,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
 
         // Interactions — distribute escrow: provider gets budget minus platform fee
         uint256 budget = job.budget;
-        uint256 fee = (budget * job.fundedFeeBP) / BP_DENOMINATOR;
+        uint256 fee = (budget * job.fundedFeeBp) / BP_DENOMINATOR;
         uint256 providerAmount = budget - fee;
 
         if (fee > 0) {
@@ -366,14 +366,14 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
     }
 
     /// @notice Update the platform fee. Owner only.
-    /// @param newFeeBP New fee in basis points (must be ≤ MAX_FEE_BP).
+    /// @param newFeeBp New fee in basis points (must be ≤ MAX_FEE_BP).
     function setPlatformFee(
-        uint256 newFeeBP
+        uint256 newFeeBp
     ) external onlyOwner {
-        if (newFeeBP > MAX_FEE_BP) revert FeeTooHigh();
-        uint256 oldFeeBP = platformFeeBP;
-        platformFeeBP = newFeeBP;
-        emit PlatformFeeUpdated(oldFeeBP, newFeeBP);
+        if (newFeeBp > MAX_FEE_BP) revert FeeTooHigh();
+        uint256 oldFeeBp = platformFeeBp;
+        platformFeeBp = newFeeBp;
+        emit PlatformFeeUpdated(oldFeeBp, newFeeBp);
     }
 
     /// @notice Update the treasury address. Owner only.

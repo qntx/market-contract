@@ -18,19 +18,19 @@ contract DeployAgenticCommerce is Script {
     function run() external {
         address paymentToken = vm.envAddress("PAYMENT_TOKEN");
         address treasury = vm.envAddress("TREASURY");
-        uint256 platformFeeBP = vm.envUint("PLATFORM_FEE_BP");
+        uint256 platformFeeBp = vm.envUint("PLATFORM_FEE_BP");
         address owner = vm.envOr("OWNER", msg.sender);
 
         vm.startBroadcast();
 
-        AgenticCommerce ac = new AgenticCommerce(paymentToken, platformFeeBP, treasury, owner);
+        AgenticCommerce ac = new AgenticCommerce(paymentToken, platformFeeBp, treasury, owner);
 
         vm.stopBroadcast();
 
         console.log("AgenticCommerce deployed at:", address(ac));
         console.log("  paymentToken:", paymentToken);
         console.log("  treasury:", treasury);
-        console.log("  platformFeeBP:", platformFeeBP);
+        console.log("  platformFeeBp:", platformFeeBp);
         console.log("  owner:", owner);
     }
 }

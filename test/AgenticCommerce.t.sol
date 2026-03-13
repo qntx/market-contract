@@ -571,7 +571,7 @@ contract AgenticCommerceTest is Test {
     function test_setPlatformFee() public {
         vm.prank(owner);
         ac.setPlatformFee(500);
-        assertEq(ac.platformFeeBP(), 500);
+        assertEq(ac.platformFeeBp(), 500);
     }
 
     function test_setPlatformFee_revert_tooHigh() public {
@@ -693,13 +693,13 @@ contract AgenticCommerceTest is Test {
 
     function testFuzz_feeDistribution(
         uint256 budget,
-        uint256 feeBP
+        uint256 feeBp
     ) public {
         budget = bound(budget, 1, 1_000_000e6);
-        feeBP = bound(feeBP, 0, 5000);
+        feeBp = bound(feeBp, 0, 5000);
 
         vm.prank(owner);
-        AgenticCommerce acFuzz = new AgenticCommerce(address(token), feeBP, treasury, owner);
+        AgenticCommerce acFuzz = new AgenticCommerce(address(token), feeBp, treasury, owner);
 
         token.mint(client, budget);
         vm.prank(client);
@@ -720,7 +720,7 @@ contract AgenticCommerceTest is Test {
         vm.prank(evaluator);
         acFuzz.complete(jobId, bytes32(0), "");
 
-        uint256 expectedFee = (budget * feeBP) / 10_000;
+        uint256 expectedFee = (budget * feeBp) / 10_000;
         uint256 expectedProvider = budget - expectedFee;
 
         assertEq(token.balanceOf(provider), providerBefore + expectedProvider);
