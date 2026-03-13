@@ -6,10 +6,20 @@ A minimal, spec-compliant implementation of [ERC-8183: Agentic Commerce](https:/
 
 ERC-8183 defines a protocol where a **client** locks funds, a **provider** submits work, and an **evaluator** attests completion or rejection. The contract manages the full job lifecycle:
 
-```text
-Open → Funded → Submitted → Completed (payment released)
-                          → Rejected  (refund to client)
-                          → Expired   (refund after timeout)
+```mermaid
+stateDiagram-v2
+    [*] --> Open: createJob
+    Open --> Funded: fund
+    Open --> Rejected: reject (client)
+    Funded --> Submitted: submit
+    Funded --> Rejected: reject (evaluator)
+    Funded --> Expired: claimRefund
+    Submitted --> Completed: complete
+    Submitted --> Rejected: reject (evaluator)
+    Submitted --> Expired: claimRefund
+    Completed --> [*]: payment released
+    Rejected --> [*]: refund to client
+    Expired --> [*]: refund to client
 ```
 
 ### Key Features
@@ -61,6 +71,23 @@ This implementation covers all **MUST/SHALL** requirements of ERC-8183:
 - SafeERC20, ReentrancyGuard
 
 Optional extensions (ERC-2771 meta-transactions, ERC-8004 reputation) are not included but can be integrated via hooks.
+
+## Design Philosophy
+
+This implementation follows a **minimal on-chain, flexible off-chain** architecture:
+
+| On-Chain (This Contract) | Off-Chain (Your Services) |
+| --- | --- |
+| ✅ Trustless fund escrow | Task discovery & matching |
+| ✅ State machine (6 states) | Notifications & messaging |
+| ✅ Role-based access control | Reputation & ratings |
+| ✅ Automatic fee distribution | Dispute resolution UI |
+| ✅ Timeout protection | Bidding & negotiation |
+| ✅ Hook extension points | Content storage (IPFS/S3) |
+
+The contract handles **trust-minimized fund custody** — the one thing that *must* be on-chain. Everything else (search, chat, ratings, complex workflows) is better served by off-chain systems that are cheaper, faster, and easier to iterate.
+
+This is why we don't include multi-mode auctions, on-chain messaging, or reputation scoring like some other implementations. Those features add gas costs and complexity while providing no additional trust guarantees.
 
 ## License
 
