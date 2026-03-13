@@ -32,13 +32,7 @@ interface IERC8183 {
 
     /// @notice Emitted when a new job is created in Open state.
     event JobCreated(
-        uint256 indexed jobId,
-        address indexed client,
-        address indexed evaluator,
-        address provider,
-        uint256 expiredAt,
-        string description,
-        address hook
+        uint256 indexed jobId, address indexed client, address provider, address evaluator, uint256 expiredAt
     );
 
     /// @notice Emitted when a provider is assigned to a job.
@@ -48,19 +42,25 @@ interface IERC8183 {
     event BudgetSet(uint256 indexed jobId, uint256 amount);
 
     /// @notice Emitted when client funds the escrow (Open → Funded).
-    event JobFunded(uint256 indexed jobId, uint256 amount);
+    event JobFunded(uint256 indexed jobId, address indexed client, uint256 amount);
 
     /// @notice Emitted when provider submits work (Funded → Submitted).
-    event JobSubmitted(uint256 indexed jobId, bytes32 deliverable);
+    event JobSubmitted(uint256 indexed jobId, address indexed provider, bytes32 deliverable);
 
     /// @notice Emitted when evaluator marks job completed (Submitted → Completed).
-    event JobCompleted(uint256 indexed jobId, bytes32 reason);
+    event JobCompleted(uint256 indexed jobId, address indexed evaluator, bytes32 reason);
 
     /// @notice Emitted when job is rejected by client (Open) or evaluator (Funded/Submitted).
-    event JobRejected(uint256 indexed jobId, bytes32 reason);
+    event JobRejected(uint256 indexed jobId, address indexed rejector, bytes32 reason);
 
     /// @notice Emitted when job expires and funds are refunded.
     event JobExpired(uint256 indexed jobId);
+
+    /// @notice Emitted when escrowed payment is released to the provider.
+    event PaymentReleased(uint256 indexed jobId, address indexed provider, uint256 amount);
+
+    /// @notice Emitted when escrowed funds are refunded to the client.
+    event Refunded(uint256 indexed jobId, address indexed client, uint256 amount);
 
     /// @notice Create a job in Open state.
     /// @dev    Provider MAY be address(0); client MUST call setProvider before fund.

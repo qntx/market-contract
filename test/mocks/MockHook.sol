@@ -15,10 +15,8 @@ contract MockHook is IACPHook {
     bytes4 public lastAfterSelector;
     uint256 public lastBeforeJobId;
     uint256 public lastAfterJobId;
-    address public lastBeforeCaller;
-    address public lastAfterCaller;
-    bytes public lastBeforeOptParams;
-    bytes public lastAfterOptParams;
+    bytes public lastBeforeData;
+    bytes public lastAfterData;
 
     function setShouldRevertBefore(
         bool val
@@ -35,30 +33,24 @@ contract MockHook is IACPHook {
     function beforeAction(
         uint256 jobId,
         bytes4 selector,
-        address caller,
-        bytes calldata optParams
-    ) external override returns (bytes memory) {
+        bytes calldata data
+    ) external override {
         if (shouldRevertBefore) revert("MockHook: beforeAction reverted");
         beforeCallCount++;
         lastBeforeJobId = jobId;
         lastBeforeSelector = selector;
-        lastBeforeCaller = caller;
-        lastBeforeOptParams = optParams;
-        return "";
+        lastBeforeData = data;
     }
 
     function afterAction(
         uint256 jobId,
         bytes4 selector,
-        address caller,
-        bytes calldata optParams
-    ) external override returns (bytes memory) {
+        bytes calldata data
+    ) external override {
         if (shouldRevertAfter) revert("MockHook: afterAction reverted");
         afterCallCount++;
         lastAfterJobId = jobId;
         lastAfterSelector = selector;
-        lastAfterCaller = caller;
-        lastAfterOptParams = optParams;
-        return "";
+        lastAfterData = data;
     }
 }

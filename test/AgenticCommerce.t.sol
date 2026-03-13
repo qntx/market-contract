@@ -106,8 +106,8 @@ contract AgenticCommerceTest is Test {
 
     function test_createJob_emitsEvent() public {
         vm.prank(client);
-        vm.expectEmit(true, true, true, true);
-        emit IERC8183.JobCreated(1, client, evaluator, provider, block.timestamp + DURATION, "event test", address(0));
+        vm.expectEmit(true, true, false, true);
+        emit IERC8183.JobCreated(1, client, provider, evaluator, block.timestamp + DURATION);
         ac.createJob(provider, evaluator, block.timestamp + DURATION, "event test", address(0));
     }
 
@@ -564,8 +564,9 @@ contract AgenticCommerceTest is Test {
         vm.prank(client);
         ac.setBudget(jobId, BUDGET, params);
 
-        assertEq(keccak256(hook.lastBeforeOptParams()), keccak256(params));
-        assertEq(keccak256(hook.lastAfterOptParams()), keccak256(params));
+        bytes memory expectedData = abi.encode(BUDGET, params);
+        assertEq(keccak256(hook.lastBeforeData()), keccak256(expectedData));
+        assertEq(keccak256(hook.lastAfterData()), keccak256(expectedData));
     }
 
     function test_setPlatformFee() public {
@@ -797,8 +798,8 @@ contract AgenticCommerceTest is Test {
         ac.setBudget(jobId, BUDGET, "");
 
         vm.prank(client);
-        vm.expectEmit(true, false, false, true);
-        emit IERC8183.JobFunded(jobId, BUDGET);
+        vm.expectEmit(true, true, false, true);
+        emit IERC8183.JobFunded(jobId, client, BUDGET);
         ac.fund(jobId, BUDGET, "");
     }
 
@@ -807,8 +808,8 @@ contract AgenticCommerceTest is Test {
         bytes32 deliverable = keccak256("work");
 
         vm.prank(provider);
-        vm.expectEmit(true, false, false, true);
-        emit IERC8183.JobSubmitted(jobId, deliverable);
+        vm.expectEmit(true, true, false, true);
+        emit IERC8183.JobSubmitted(jobId, provider, deliverable);
         ac.submit(jobId, deliverable, "");
     }
 
@@ -817,8 +818,8 @@ contract AgenticCommerceTest is Test {
         bytes32 reason = keccak256("good");
 
         vm.prank(evaluator);
-        vm.expectEmit(true, false, false, true);
-        emit IERC8183.JobCompleted(jobId, reason);
+        vm.expectEmit(true, true, false, true);
+        emit IERC8183.JobCompleted(jobId, evaluator, reason);
         ac.complete(jobId, reason, "");
     }
 
@@ -827,8 +828,8 @@ contract AgenticCommerceTest is Test {
         bytes32 reason = keccak256("bad");
 
         vm.prank(client);
-        vm.expectEmit(true, false, false, true);
-        emit IERC8183.JobRejected(jobId, reason);
+        vm.expectEmit(true, true, false, true);
+        emit IERC8183.JobRejected(jobId, client, reason);
         ac.reject(jobId, reason, "");
     }
 

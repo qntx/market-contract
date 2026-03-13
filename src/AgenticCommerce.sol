@@ -159,7 +159,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
             fundedFeeBp: 0
         });
 
-        emit JobCreated(jobId, msg.sender, evaluator, provider, expiredAt, description, hook);
+        emit JobCreated(jobId, msg.sender, provider, evaluator, expiredAt);
     }
 
     /// @inheritdoc IERC8183
@@ -175,13 +175,14 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         if (job.provider != address(0)) revert ProviderAlreadySet();
         if (provider == address(0)) revert ZeroAddress();
 
-        _callBeforeHook(jobId, job.hook, msg.sig, optParams);
+        bytes memory hookData = abi.encode(provider, optParams);
+        _callBeforeHook(jobId, job.hook, msg.sig, hookData);
 
         job.provider = provider;
 
         emit ProviderSet(jobId, provider);
 
-        _callAfterHook(jobId, job.hook, msg.sig, optParams);
+        _callAfterHook(jobId, job.hook, msg.sig, hookData);
     }
 
     /// @inheritdoc IERC8183
@@ -195,13 +196,14 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         if (job.status != Status.Open) revert InvalidStatus(job.status);
         if (msg.sender != job.client && msg.sender != job.provider) revert Unauthorized();
 
-        _callBeforeHook(jobId, job.hook, msg.sig, optParams);
+        bytes memory hookData = abi.encode(amount, optParams);
+        _callBeforeHook(jobId, job.hook, msg.sig, hookData);
 
         job.budget = amount;
 
         emit BudgetSet(jobId, amount);
 
-        _callAfterHook(jobId, job.hook, msg.sig, optParams);
+        _callAfterHook(jobId, job.hook, msg.sig, hookData);
     }
 
     /// @inheritdoc IERC8183
@@ -218,7 +220,8 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         if (job.budget == 0) revert ZeroBudget();
         if (job.budget != expectedBudget) revert BudgetMismatch(job.budget, expectedBudget);
 
-        _callBeforeHook(jobId, job.hook, msg.sig, optParams);
+        bytes memory hookData = optParams;
+        _callBeforeHook(jobId, job.hook, msg.sig, hookData);
 
         // Effects
         job.status = Status.Funded;
@@ -227,9 +230,9 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         // Interactions — pull tokens into escrow
         PAYMENT_TOKEN.safeTransferFrom(msg.sender, address(this), job.budget);
 
-        emit JobFunded(jobId, job.budget);
+        emit JobFunded(jobId, msg.sender, job.budget);
 
-        _callAfterHook(jobId, job.hook, msg.sig, optParams);
+        _callAfterHook(jobId, job.hook, msg.sig, hookData);
     }
 
     /// @inheritdoc IERC8183
@@ -243,15 +246,16 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         if (msg.sender != job.provider) revert Unauthorized();
         if (job.status != Status.Funded) revert InvalidStatus(job.status);
 
-        _callBeforeHook(jobId, job.hook, msg.sig, optParams);
+        bytes memory hookData = abi.encode(deliverable, optParams);
+        _callBeforeHook(jobId, job.hook, msg.sig, hookData);
 
         // Effects
         job.status = Status.Submitted;
         job.deliverable = deliverable;
 
-        emit JobSubmitted(jobId, deliverable);
+        emit JobSubmitted(jobId, msg.sender, deliverable);
 
-        _callAfterHook(jobId, job.hook, msg.sig, optParams);
+        _callAfterHook(jobId, job.hook, msg.sig, hookData);
     }
 
     /// @inheritdoc IERC8183
@@ -265,7 +269,8 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         if (msg.sender != job.evaluator) revert Unauthorized();
         if (job.status != Status.Submitted) revert InvalidStatus(job.status);
 
-        _callBeforeHook(jobId, job.hook, msg.sig, optParams);
+        bytes memory hookData = abi.encode(reason, optParams);
+        _callBeforeHook(jobId, job.hook, msg.sig, hookData);
 
         // Effects
         job.status = Status.Completed;
@@ -282,9 +287,12 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
             PAYMENT_TOKEN.safeTransfer(job.provider, providerAmount);
         }
 
-        emit JobCompleted(jobId, reason);
+        emit JobCompleted(jobId, msg.sender, reason);
+        if (providerAmount > 0) {
+            emit PaymentReleased(jobId, job.provider, providerAmount);
+        }
 
-        _callAfterHook(jobId, job.hook, msg.sig, optParams);
+        _callAfterHook(jobId, job.hook, msg.sig, hookData);
     }
 
     /// @inheritdoc IERC8183
@@ -305,7 +313,8 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
             revert InvalidStatus(job.status);
         }
 
-        _callBeforeHook(jobId, job.hook, msg.sig, optParams);
+        bytes memory hookData = abi.encode(reason, optParams);
+        _callBeforeHook(jobId, job.hook, msg.sig, hookData);
 
         // Effects
         Status prevStatus = job.status;
@@ -314,11 +323,12 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         // Interactions — refund client if funds were escrowed
         if (prevStatus == Status.Funded || prevStatus == Status.Submitted) {
             PAYMENT_TOKEN.safeTransfer(job.client, job.budget);
+            emit Refunded(jobId, job.client, job.budget);
         }
 
-        emit JobRejected(jobId, reason);
+        emit JobRejected(jobId, msg.sender, reason);
 
-        _callAfterHook(jobId, job.hook, msg.sig, optParams);
+        _callAfterHook(jobId, job.hook, msg.sig, hookData);
     }
 
     /// @inheritdoc IERC8183
@@ -340,6 +350,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         PAYMENT_TOKEN.safeTransfer(job.client, job.budget);
 
         emit JobExpired(jobId);
+        emit Refunded(jobId, job.client, job.budget);
     }
 
     /// @inheritdoc IERC8183
@@ -392,12 +403,10 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         uint256 jobId,
         address hook,
         bytes4 selector,
-        bytes calldata optParams
+        bytes memory data
     ) internal {
         if (hook == address(0)) return;
-        (bool success,) = hook.call{gas: HOOK_GAS_LIMIT}(
-            abi.encodeCall(IACPHook.beforeAction, (jobId, selector, msg.sender, optParams))
-        );
+        (bool success,) = hook.call{gas: HOOK_GAS_LIMIT}(abi.encodeCall(IACPHook.beforeAction, (jobId, selector, data)));
         if (!success) revert HookCallFailed();
     }
 
@@ -406,12 +415,10 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         uint256 jobId,
         address hook,
         bytes4 selector,
-        bytes calldata optParams
+        bytes memory data
     ) internal {
         if (hook == address(0)) return;
-        (bool success,) = hook.call{gas: HOOK_GAS_LIMIT}(
-            abi.encodeCall(IACPHook.afterAction, (jobId, selector, msg.sender, optParams))
-        );
+        (bool success,) = hook.call{gas: HOOK_GAS_LIMIT}(abi.encodeCall(IACPHook.afterAction, (jobId, selector, data)));
         if (!success) revert HookCallFailed();
     }
 }
