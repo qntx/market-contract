@@ -726,4 +726,173 @@ contract AgenticCommerceTest is Test {
         assertEq(token.balanceOf(provider), providerBefore + expectedProvider);
         assertEq(token.balanceOf(treasury), treasuryBefore + expectedFee);
     }
+
+    function test_constructor_revert_zeroPaymentToken() public {
+        vm.expectRevert(AgenticCommerce.ZeroAddress.selector);
+        new AgenticCommerce(address(0), FEE_BP, treasury, owner);
+    }
+
+    function test_constructor_revert_zeroTreasury() public {
+        vm.expectRevert(AgenticCommerce.ZeroAddress.selector);
+        new AgenticCommerce(address(token), FEE_BP, address(0), owner);
+    }
+
+    function test_constructor_revert_feeTooHigh() public {
+        vm.expectRevert(AgenticCommerce.FeeTooHigh.selector);
+        new AgenticCommerce(address(token), 5001, treasury, owner);
+    }
+
+    function test_complete_usesSnapshotedFee() public {
+        uint256 jobId = _createJob();
+        vm.prank(client);
+        ac.setBudget(jobId, BUDGET, "");
+        vm.prank(client);
+        ac.fund(jobId, BUDGET, "");
+
+        vm.prank(owner);
+        ac.setPlatformFee(5000);
+
+        vm.prank(provider);
+        ac.submit(jobId, keccak256("d"), "");
+
+        vm.prank(evaluator);
+        ac.complete(jobId, bytes32(0), "");
+
+        uint256 expectedFee = (BUDGET * FEE_BP) / 10_000;
+        uint256 expectedProvider = BUDGET - expectedFee;
+        assertEq(token.balanceOf(provider), expectedProvider);
+        assertEq(token.balanceOf(treasury), expectedFee);
+    }
+
+    function test_reject_revert_fromRejected() public {
+        uint256 jobId = _createJob();
+        vm.prank(client);
+        ac.reject(jobId, bytes32(0), "");
+
+        vm.prank(client);
+        vm.expectRevert(abi.encodeWithSelector(AgenticCommerce.InvalidStatus.selector, IERC8183.Status.Rejected));
+        ac.reject(jobId, bytes32(0), "");
+    }
+
+    function test_reject_revert_fromExpired() public {
+        uint256 jobId = _createAndFundJob();
+        vm.warp(block.timestamp + DURATION + 1);
+        ac.claimRefund(jobId);
+
+        vm.prank(evaluator);
+        vm.expectRevert(abi.encodeWithSelector(AgenticCommerce.InvalidStatus.selector, IERC8183.Status.Expired));
+        ac.reject(jobId, bytes32(0), "");
+    }
+
+    function test_submit_revert_fromSubmitted() public {
+        uint256 jobId = _createFundAndSubmitJob();
+        vm.prank(provider);
+        vm.expectRevert(abi.encodeWithSelector(AgenticCommerce.InvalidStatus.selector, IERC8183.Status.Submitted));
+        ac.submit(jobId, keccak256("x"), "");
+    }
+
+    function test_fund_emitsEvent() public {
+        uint256 jobId = _createJob();
+        vm.prank(client);
+        ac.setBudget(jobId, BUDGET, "");
+
+        vm.prank(client);
+        vm.expectEmit(true, false, false, true);
+        emit IERC8183.JobFunded(jobId, BUDGET);
+        ac.fund(jobId, BUDGET, "");
+    }
+
+    function test_submit_emitsEvent() public {
+        uint256 jobId = _createAndFundJob();
+        bytes32 deliverable = keccak256("work");
+
+        vm.prank(provider);
+        vm.expectEmit(true, false, false, true);
+        emit IERC8183.JobSubmitted(jobId, deliverable);
+        ac.submit(jobId, deliverable, "");
+    }
+
+    function test_complete_emitsEvent() public {
+        uint256 jobId = _createFundAndSubmitJob();
+        bytes32 reason = keccak256("good");
+
+        vm.prank(evaluator);
+        vm.expectEmit(true, false, false, true);
+        emit IERC8183.JobCompleted(jobId, reason);
+        ac.complete(jobId, reason, "");
+    }
+
+    function test_reject_emitsEvent() public {
+        uint256 jobId = _createJob();
+        bytes32 reason = keccak256("bad");
+
+        vm.prank(client);
+        vm.expectEmit(true, false, false, true);
+        emit IERC8183.JobRejected(jobId, reason);
+        ac.reject(jobId, reason, "");
+    }
+
+    function test_claimRefund_emitsEvent() public {
+        uint256 jobId = _createAndFundJob();
+        vm.warp(block.timestamp + DURATION + 1);
+
+        vm.expectEmit(true, false, false, false);
+        emit IERC8183.JobExpired(jobId);
+        ac.claimRefund(jobId);
+    }
+
+    function test_setTreasury_revert_notOwner() public {
+        vm.prank(anyone);
+        vm.expectRevert();
+        ac.setTreasury(makeAddr("x"));
+    }
+
+    function test_hook_selectorCorrectness() public {
+        uint256 jobId = _createJobWithHook();
+
+        vm.prank(client);
+        ac.setBudget(jobId, BUDGET, "");
+        assertEq(hook.lastBeforeSelector(), ac.setBudget.selector);
+        assertEq(hook.lastAfterSelector(), ac.setBudget.selector);
+
+        vm.prank(client);
+        ac.fund(jobId, BUDGET, "");
+        assertEq(hook.lastBeforeSelector(), ac.fund.selector);
+        assertEq(hook.lastAfterSelector(), ac.fund.selector);
+
+        vm.prank(provider);
+        ac.submit(jobId, keccak256("d"), "");
+        assertEq(hook.lastBeforeSelector(), ac.submit.selector);
+        assertEq(hook.lastAfterSelector(), ac.submit.selector);
+
+        vm.prank(evaluator);
+        ac.complete(jobId, bytes32(0), "");
+        assertEq(hook.lastBeforeSelector(), ac.complete.selector);
+        assertEq(hook.lastAfterSelector(), ac.complete.selector);
+    }
+
+    function test_claimRefund_exactlyAtExpiry() public {
+        uint256 jobId = _createAndFundJob();
+        IERC8183.Job memory job = ac.getJob(jobId);
+
+        vm.warp(job.expiredAt);
+        ac.claimRefund(jobId);
+        assertEq(uint8(ac.getJob(jobId).status), uint8(IERC8183.Status.Expired));
+    }
+
+    function test_edgeCase_minimumBudgetFeeRounding() public {
+        uint256 jobId = _createJob();
+        vm.prank(client);
+        ac.setBudget(jobId, 1, "");
+        vm.prank(client);
+        ac.fund(jobId, 1, "");
+        vm.prank(provider);
+        ac.submit(jobId, keccak256("d"), "");
+
+        vm.prank(evaluator);
+        ac.complete(jobId, bytes32(0), "");
+
+        assertEq(token.balanceOf(provider), 1);
+        assertEq(token.balanceOf(address(ac)), 0);
+    }
 }

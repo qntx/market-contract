@@ -5,7 +5,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /// @dev Simple ERC-20 mock for testing. Mints arbitrary amounts to any address.
 contract MockERC20 is ERC20 {
-    uint8 private _decimals;
+    uint8 private immutable _decimals;
 
     constructor(
         string memory name_,

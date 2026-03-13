@@ -49,6 +49,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         Status status;
         address hook;
         bytes32 deliverable;
+        uint256 fundedFeeBP;
     }
 
     /// @dev jobId => JobStorage
@@ -154,7 +155,8 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
             expiredAt: expiredAt,
             status: Status.Open,
             hook: hook,
-            deliverable: bytes32(0)
+            deliverable: bytes32(0),
+            fundedFeeBP: 0
         });
 
         emit JobCreated(jobId, msg.sender, evaluator, provider, expiredAt, description, hook);
@@ -165,7 +167,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         uint256 jobId,
         address provider,
         bytes calldata optParams
-    ) external override jobExists(jobId) {
+    ) external override nonReentrant jobExists(jobId) {
         JobStorage storage job = _jobs[jobId];
 
         if (msg.sender != job.client) revert Unauthorized();
@@ -187,7 +189,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         uint256 jobId,
         uint256 amount,
         bytes calldata optParams
-    ) external override jobExists(jobId) {
+    ) external override nonReentrant jobExists(jobId) {
         JobStorage storage job = _jobs[jobId];
 
         if (job.status != Status.Open) revert InvalidStatus(job.status);
@@ -220,6 +222,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
 
         // Effects
         job.status = Status.Funded;
+        job.fundedFeeBP = platformFeeBP;
 
         // Interactions — pull tokens into escrow
         PAYMENT_TOKEN.safeTransferFrom(msg.sender, address(this), job.budget);
@@ -234,7 +237,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         uint256 jobId,
         bytes32 deliverable,
         bytes calldata optParams
-    ) external override jobExists(jobId) {
+    ) external override nonReentrant jobExists(jobId) {
         JobStorage storage job = _jobs[jobId];
 
         if (msg.sender != job.provider) revert Unauthorized();
@@ -269,7 +272,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
 
         // Interactions — distribute escrow: provider gets budget minus platform fee
         uint256 budget = job.budget;
-        uint256 fee = (budget * platformFeeBP) / BP_DENOMINATOR;
+        uint256 fee = (budget * job.fundedFeeBP) / BP_DENOMINATOR;
         uint256 providerAmount = budget - fee;
 
         if (fee > 0) {
