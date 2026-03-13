@@ -17,10 +17,6 @@ import {IACPHook} from "./interfaces/IACPHook.sol";
 contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
     using SafeERC20 for IERC20;
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Constants
-    // ─────────────────────────────────────────────────────────────────────
-
     /// @notice Maximum platform fee: 50% (5000 basis points).
     uint256 public constant MAX_FEE_BP = 5000;
 
@@ -30,16 +26,8 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
     /// @notice Gas limit for hook calls to bound execution cost.
     uint256 public constant HOOK_GAS_LIMIT = 500_000;
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Immutables
-    // ─────────────────────────────────────────────────────────────────────
-
     /// @notice The ERC-20 token used for all escrow payments.
     IERC20 public immutable PAYMENT_TOKEN;
-
-    // ─────────────────────────────────────────────────────────────────────
-    // State
-    // ─────────────────────────────────────────────────────────────────────
 
     /// @notice Platform fee in basis points (e.g. 250 = 2.5%).
     uint256 public platformFeeBP;
@@ -65,10 +53,6 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
 
     /// @dev jobId => JobStorage
     mapping(uint256 => JobStorage) internal _jobs;
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Errors
-    // ─────────────────────────────────────────────────────────────────────
 
     /// @dev Address must not be zero.
     error ZeroAddress();
@@ -106,16 +90,8 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
     /// @dev Hook external call failed or ran out of gas.
     error HookCallFailed();
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Admin Events
-    // ─────────────────────────────────────────────────────────────────────
-
     event PlatformFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
     event TreasuryUpdated(address oldTreasury, address newTreasury);
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Constructor
-    // ─────────────────────────────────────────────────────────────────────
 
     /// @param paymentToken_ ERC-20 token used for escrow (immutable).
     /// @param platformFeeBP_ Initial platform fee in basis points.
@@ -136,22 +112,18 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         treasury = treasury_;
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Modifiers
-    // ─────────────────────────────────────────────────────────────────────
-
-    modifier jobExists(uint256 jobId) {
+    modifier jobExists(
+        uint256 jobId
+    ) {
         _checkJobExists(jobId);
         _;
     }
 
-    function _checkJobExists(uint256 jobId) internal view {
+    function _checkJobExists(
+        uint256 jobId
+    ) internal view {
         if (jobId == 0 || jobId > jobCounter) revert JobDoesNotExist();
     }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // ERC-165
-    // ─────────────────────────────────────────────────────────────────────
 
     /// @inheritdoc IERC165
     function supportsInterface(
@@ -159,10 +131,6 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
     ) external pure override returns (bool) {
         return interfaceId == type(IERC8183).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Core Functions
-    // ─────────────────────────────────────────────────────────────────────
 
     /// @inheritdoc IERC8183
     function createJob(
@@ -371,10 +339,6 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         emit JobExpired(jobId);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // View Functions
-    // ─────────────────────────────────────────────────────────────────────
-
     /// @inheritdoc IERC8183
     function getJob(
         uint256 jobId
@@ -398,10 +362,6 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         return jobCounter;
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Admin Functions
-    // ─────────────────────────────────────────────────────────────────────
-
     /// @notice Update the platform fee. Owner only.
     /// @param newFeeBP New fee in basis points (must be ≤ MAX_FEE_BP).
     function setPlatformFee(
@@ -423,10 +383,6 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuard, Ownable2Step {
         treasury = newTreasury;
         emit TreasuryUpdated(oldTreasury, newTreasury);
     }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Internal — Hook Helpers
-    // ─────────────────────────────────────────────────────────────────────
 
     /// @dev Call the beforeAction hook with bounded gas. No-op if hook is address(0).
     function _callBeforeHook(

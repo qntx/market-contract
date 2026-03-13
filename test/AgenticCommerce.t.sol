@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AgenticCommerce} from "../src/AgenticCommerce.sol";
 import {IERC8183} from "../src/interfaces/IERC8183.sol";
-import {IACPHook} from "../src/interfaces/IACPHook.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockHook} from "./mocks/MockHook.sol";
 
@@ -37,8 +36,6 @@ contract AgenticCommerceTest is Test {
         token.approve(address(ac), type(uint256).max);
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────
-
     function _createJob() internal returns (uint256 jobId) {
         vm.prank(client);
         jobId = ac.createJob(provider, evaluator, block.timestamp + DURATION, "test job", address(0));
@@ -62,10 +59,6 @@ contract AgenticCommerceTest is Test {
         vm.prank(provider);
         ac.submit(jobId, keccak256("deliverable"), "");
     }
-
-    // ═════════════════════════════════════════════════════════════════
-    // createJob
-    // ═════════════════════════════════════════════════════════════════
 
     function test_createJob_basic() public {
         vm.prank(client);
@@ -124,10 +117,6 @@ contract AgenticCommerceTest is Test {
         assertEq(ac.totalJobs(), 2);
     }
 
-    // ═════════════════════════════════════════════════════════════════
-    // setProvider
-    // ═════════════════════════════════════════════════════════════════
-
     function test_setProvider_basic() public {
         vm.prank(client);
         uint256 jobId = ac.createJob(address(0), evaluator, block.timestamp + DURATION, "open", address(0));
@@ -171,10 +160,6 @@ contract AgenticCommerceTest is Test {
         ac.setProvider(jobId, makeAddr("other"), "");
     }
 
-    // ═════════════════════════════════════════════════════════════════
-    // setBudget
-    // ═════════════════════════════════════════════════════════════════
-
     function test_setBudget_byClient() public {
         uint256 jobId = _createJob();
         vm.prank(client);
@@ -206,10 +191,6 @@ contract AgenticCommerceTest is Test {
         vm.expectRevert(abi.encodeWithSelector(AgenticCommerce.InvalidStatus.selector, IERC8183.Status.Funded));
         ac.setBudget(jobId, BUDGET * 2, "");
     }
-
-    // ═════════════════════════════════════════════════════════════════
-    // fund
-    // ═════════════════════════════════════════════════════════════════
 
     function test_fund_basic() public {
         uint256 jobId = _createJob();
@@ -266,10 +247,6 @@ contract AgenticCommerceTest is Test {
         ac.fund(jobId, BUDGET, "");
     }
 
-    // ═════════════════════════════════════════════════════════════════
-    // submit
-    // ═════════════════════════════════════════════════════════════════
-
     function test_submit_basic() public {
         uint256 jobId = _createAndFundJob();
         bytes32 deliverable = keccak256("my work");
@@ -295,10 +272,6 @@ contract AgenticCommerceTest is Test {
         vm.expectRevert(abi.encodeWithSelector(AgenticCommerce.InvalidStatus.selector, IERC8183.Status.Open));
         ac.submit(jobId, keccak256("x"), "");
     }
-
-    // ═════════════════════════════════════════════════════════════════
-    // complete
-    // ═════════════════════════════════════════════════════════════════
 
     function test_complete_basic() public {
         uint256 jobId = _createFundAndSubmitJob();
@@ -374,10 +347,6 @@ contract AgenticCommerceTest is Test {
         assertEq(uint8(job.status), uint8(IERC8183.Status.Completed));
     }
 
-    // ═════════════════════════════════════════════════════════════════
-    // reject
-    // ═════════════════════════════════════════════════════════════════
-
     function test_reject_fromOpen_byClient() public {
         uint256 jobId = _createJob();
         vm.prank(client);
@@ -436,10 +405,6 @@ contract AgenticCommerceTest is Test {
         ac.reject(jobId, bytes32(0), "");
     }
 
-    // ═════════════════════════════════════════════════════════════════
-    // claimRefund
-    // ═════════════════════════════════════════════════════════════════
-
     function test_claimRefund_fromFunded() public {
         uint256 jobId = _createAndFundJob();
         uint256 clientBefore = token.balanceOf(client);
@@ -496,10 +461,6 @@ contract AgenticCommerceTest is Test {
         ac.claimRefund(jobId);
         assertEq(uint8(ac.getJob(jobId).status), uint8(IERC8183.Status.Expired));
     }
-
-    // ═════════════════════════════════════════════════════════════════
-    // Hooks
-    // ═════════════════════════════════════════════════════════════════
 
     function test_hook_calledOnSetBudget() public {
         uint256 jobId = _createJobWithHook();
@@ -607,10 +568,6 @@ contract AgenticCommerceTest is Test {
         assertEq(keccak256(hook.lastAfterOptParams()), keccak256(params));
     }
 
-    // ═════════════════════════════════════════════════════════════════
-    // Admin
-    // ═════════════════════════════════════════════════════════════════
-
     function test_setPlatformFee() public {
         vm.prank(owner);
         ac.setPlatformFee(500);
@@ -642,10 +599,6 @@ contract AgenticCommerceTest is Test {
         ac.setTreasury(address(0));
     }
 
-    // ═════════════════════════════════════════════════════════════════
-    // ERC-165
-    // ═════════════════════════════════════════════════════════════════
-
     function test_supportsInterface_IERC8183() public view {
         assertTrue(ac.supportsInterface(type(IERC8183).interfaceId));
     }
@@ -658,10 +611,6 @@ contract AgenticCommerceTest is Test {
         assertFalse(ac.supportsInterface(0xdeadbeef));
     }
 
-    // ═════════════════════════════════════════════════════════════════
-    // getJob
-    // ═════════════════════════════════════════════════════════════════
-
     function test_getJob_revert_doesNotExist() public {
         vm.expectRevert(AgenticCommerce.JobDoesNotExist.selector);
         ac.getJob(999);
@@ -671,10 +620,6 @@ contract AgenticCommerceTest is Test {
         vm.expectRevert(AgenticCommerce.JobDoesNotExist.selector);
         ac.getJob(0);
     }
-
-    // ═════════════════════════════════════════════════════════════════
-    // Full lifecycle
-    // ═════════════════════════════════════════════════════════════════
 
     function test_fullLifecycle_happyPath() public {
         // 1. Create job
@@ -745,10 +690,6 @@ contract AgenticCommerceTest is Test {
         assertEq(uint8(ac.getJob(jobId).status), uint8(IERC8183.Status.Expired));
         assertEq(token.balanceOf(client), clientBefore + BUDGET);
     }
-
-    // ═════════════════════════════════════════════════════════════════
-    // Fuzz
-    // ═════════════════════════════════════════════════════════════════
 
     function testFuzz_feeDistribution(
         uint256 budget,

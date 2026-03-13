@@ -6,10 +6,6 @@ pragma solidity ^0.8.28;
 /// @dev Implementations MUST emit the declared events on every corresponding state transition.
 ///      See https://eips.ethereum.org/EIPS/eip-8183
 interface IERC8183 {
-    // ─────────────────────────────────────────────────────────────────────
-    // Types
-    // ─────────────────────────────────────────────────────────────────────
-
     /// @notice Canonical job lifecycle states.
     ///         Open → Funded → Submitted → Terminal (Completed | Rejected | Expired)
     enum Status {
@@ -33,10 +29,6 @@ interface IERC8183 {
         address hook;
         bytes32 deliverable;
     }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Events
-    // ─────────────────────────────────────────────────────────────────────
 
     /// @notice Emitted when a new job is created in Open state.
     event JobCreated(
@@ -69,10 +61,6 @@ interface IERC8183 {
 
     /// @notice Emitted when job expires and funds are refunded.
     event JobExpired(uint256 indexed jobId);
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Core Functions
-    // ─────────────────────────────────────────────────────────────────────
 
     /// @notice Create a job in Open state.
     /// @dev    Provider MAY be address(0); client MUST call setProvider before fund.
