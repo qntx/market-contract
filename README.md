@@ -144,12 +144,39 @@ This implementation covers all **MUST/SHALL** requirements of ERC-8183:
 
 ---
 
+## Installation
+
+Install as a Foundry dependency:
+
+```bash
+forge install qntx/market-contract
+```
+
+Add the remapping to your `foundry.toml`:
+
+```toml
+remappings = [
+    "market-contract/=lib/market-contract/src/",
+]
+```
+
+Import in your contracts:
+
+```solidity
+import {AgenticCommerce} from "market-contract/AgenticCommerce.sol";
+import {BaseACPHook} from "market-contract/BaseACPHook.sol";
+import {IERC8183} from "market-contract/interfaces/IERC8183.sol";
+import {IACPHook} from "market-contract/interfaces/IACPHook.sol";
+```
+
+---
+
 ## Hook Development
 
 Extend protocol functionality by implementing `IACPHook` via `BaseACPHook`:
 
 ```solidity
-import {BaseACPHook} from "src/BaseACPHook.sol";
+import {BaseACPHook} from "market-contract/BaseACPHook.sol";
 
 contract MyHook is BaseACPHook {
     constructor(address acp) BaseACPHook(acp) {}
