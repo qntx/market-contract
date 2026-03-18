@@ -34,8 +34,7 @@ contract DeployMultiChain is Script {
         bytes32 salt = bytes32(vm.envOr("SALT", uint256(1)));
 
         bytes memory creationCode = abi.encodePacked(
-            type(AgenticCommerce).creationCode,
-            abi.encode(paymentToken, platformFeeBp, evaluatorFeeBp, treasury, owner)
+            type(AgenticCommerce).creationCode, abi.encode(paymentToken, platformFeeBp, evaluatorFeeBp, treasury, owner)
         );
 
         address predicted = computeCreate2Address(salt, keccak256(creationCode));
@@ -46,9 +45,8 @@ contract DeployMultiChain is Script {
 
         vm.startBroadcast();
 
-        AgenticCommerce ac = new AgenticCommerce{salt: salt}(
-            paymentToken, platformFeeBp, evaluatorFeeBp, treasury, owner
-        );
+        AgenticCommerce ac =
+            new AgenticCommerce{salt: salt}(paymentToken, platformFeeBp, evaluatorFeeBp, treasury, owner);
 
         vm.stopBroadcast();
 
@@ -73,8 +71,7 @@ contract DeployMultiChain is Script {
         bytes32 salt = bytes32(vm.envOr("SALT", uint256(1)));
 
         bytes memory creationCode = abi.encodePacked(
-            type(AgenticCommerce).creationCode,
-            abi.encode(paymentToken, platformFeeBp, evaluatorFeeBp, treasury, owner)
+            type(AgenticCommerce).creationCode, abi.encode(paymentToken, platformFeeBp, evaluatorFeeBp, treasury, owner)
         );
 
         address predicted = computeCreate2Address(salt, keccak256(creationCode));
