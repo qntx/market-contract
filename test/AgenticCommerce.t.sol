@@ -1121,4 +1121,129 @@ contract AgenticCommerceTest is Test {
         assertEq(token.balanceOf(treasury), tBal + expPFee);
         assertEq(token.balanceOf(evaluator), eBal + expEFee);
     }
+
+    // =====================================================================
+    //  renounceOwnership (disabled)
+    // =====================================================================
+
+    function test_renounceOwnership_revert() public {
+        vm.prank(owner);
+        vm.expectRevert(AgenticCommerce.Unauthorized.selector);
+        ac.renounceOwnership();
+    }
+
+    function test_renounceOwnership_revert_nonOwner() public {
+        vm.prank(rando);
+        vm.expectRevert(AgenticCommerce.Unauthorized.selector);
+        ac.renounceOwnership();
+    }
+}
+
+// =========================================================================
+//  Reentrancy test (separate contract, needs its own token)
+// =========================================================================
+
+import {ReentrantToken} from "./mocks/ReentrantToken.sol";
+
+contract AgenticCommerceReentrancyTest is Test {
+    AgenticCommerce ac;
+    ReentrantToken rToken;
+
+    address owner = makeAddr("owner");
+    address client = makeAddr("client");
+    address provider = makeAddr("provider");
+    address evaluator = makeAddr("evaluator");
+    address treasury = makeAddr("treasury");
+
+    uint256 constant BUDGET = 1000e18;
+
+    function setUp() public {
+        rToken = new ReentrantToken();
+        ac = new AgenticCommerce(address(rToken), 0, 0, treasury, owner);
+
+        rToken.mint(client, BUDGET * 10);
+        vm.prank(client);
+        rToken.approve(address(ac), type(uint256).max);
+    }
+
+    function test_reentrancy_claimRefundDuringReject() public {
+        vm.prank(client);
+        uint256 id = ac.createJob(provider, evaluator, block.timestamp + 7 days, "j", address(0));
+        vm.prank(client);
+        ac.setBudget(id, BUDGET, "");
+        vm.prank(client);
+        ac.fund(id, BUDGET, "");
+
+        // Arm the token: on the refund transfer inside reject(), attempt re-enter claimRefund
+        vm.warp(block.timestamp + 7 days);
+        rToken.arm(address(ac), id);
+
+        vm.prank(evaluator);
+        ac.reject(id, bytes32(0), "");
+
+        // Job should be Rejected, not Expired (reentrancy was blocked)
+        assertEq(uint8(ac.getJob(id).status), uint8(IERC8183.Status.Rejected));
+        assertEq(rToken.balanceOf(client), BUDGET * 10, "client fully refunded");
+        assertEq(rToken.balanceOf(address(ac)), 0, "no funds stuck");
+    }
+
+    function test_reentrancy_claimRefundDuringClaimRefund() public {
+        vm.prank(client);
+        uint256 id = ac.createJob(provider, evaluator, block.timestamp + 7 days, "j", address(0));
+        vm.prank(client);
+        ac.setBudget(id, BUDGET, "");
+        vm.prank(client);
+        ac.fund(id, BUDGET, "");
+
+        vm.warp(block.timestamp + 7 days);
+        rToken.arm(address(ac), id);
+
+        ac.claimRefund(id);
+
+        assertEq(uint8(ac.getJob(id).status), uint8(IERC8183.Status.Expired));
+        assertEq(rToken.balanceOf(client), BUDGET * 10);
+        assertEq(rToken.balanceOf(address(ac)), 0);
+    }
+}
+
+// =========================================================================
+//  Hook gas limit test (separate contract)
+// =========================================================================
+
+import {GasGuzzlerHook} from "./mocks/GasGuzzlerHook.sol";
+
+contract AgenticCommerceGasLimitTest is Test {
+    AgenticCommerce ac;
+    MockERC20 token;
+    GasGuzzlerHook guzzler;
+
+    address owner = makeAddr("owner");
+    address client = makeAddr("client");
+    address provider = makeAddr("provider");
+    address evaluator = makeAddr("evaluator");
+
+    function setUp() public {
+        token = new MockERC20("T", "T", 6);
+        guzzler = new GasGuzzlerHook();
+        ac = new AgenticCommerce(address(token), 0, 0, makeAddr("treasury"), owner);
+
+        vm.prank(owner);
+        ac.setHookWhitelist(address(guzzler), true);
+
+        token.mint(client, 1_000_000e6);
+        vm.prank(client);
+        token.approve(address(ac), type(uint256).max);
+    }
+
+    function test_gasGuzzlerHook_cannotConsumeUnlimitedGas() public {
+        vm.prank(client);
+        uint256 id = ac.createJob(provider, evaluator, block.timestamp + 7 days, "j", address(guzzler));
+
+        // setBudget triggers hook.beforeAction which burns all its gas.
+        // With gas limit, the hook call reverts (out of gas), reverting the whole tx.
+        // Critically: the caller's remaining gas is NOT consumed — only HOOK_GAS_LIMIT is lost.
+        vm.prank(client);
+        vm.expectRevert();
+        ac.setBudget(id, 1000e6, "");
+    }
 }

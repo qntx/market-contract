@@ -366,7 +366,7 @@ contract BaseACPHookTest is Test {
     //  Selector correctness (guards against typos in keccak constants)
     // =====================================================================
 
-    function test_selectorConstants_matchInterface() public view {
+    function test_selectorConstants_matchInterface() public pure {
         assertEq(SEL_SET_PROVIDER, AgenticCommerce.setProvider.selector);
         assertEq(SEL_SET_BUDGET, AgenticCommerce.setBudget.selector);
         assertEq(SEL_FUND, AgenticCommerce.fund.selector);

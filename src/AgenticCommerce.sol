@@ -107,6 +107,11 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
         if (jobId == 0 || jobId > jobCounter) revert JobDoesNotExist();
     }
 
+    /// @dev Disabled to prevent irreversible loss of admin control on a non-upgradeable contract.
+    function renounceOwnership() public pure override {
+        revert Unauthorized();
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(
         bytes4 interfaceId
@@ -305,10 +310,10 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
         uint256 jobId
     ) external override nonReentrant jobExists(jobId) {
         JobStorage storage job = _jobs[jobId];
-        if (block.timestamp < job.expiredAt) revert JobNotExpired();
         if (job.status != Status.Funded && job.status != Status.Submitted) {
             revert InvalidStatus(job.status);
         }
+        if (block.timestamp < job.expiredAt) revert JobNotExpired();
 
         job.status = Status.Expired;
 
