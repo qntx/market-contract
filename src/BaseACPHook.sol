@@ -2,30 +2,19 @@
 pragma solidity ^0.8.28;
 
 import {IACPHook} from "./interfaces/IACPHook.sol";
+import {IERC8183} from "./interfaces/IERC8183.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @title BaseACPHook — Convenience base for ERC-8183 hook development
-/// @notice Routes generic beforeAction/afterAction calls to named virtual functions
-///         so hook developers only override what they need.
-/// @dev    NOT part of the ERC standard — this is a helper that can evolve independently.
-///
-///         Data encoding per selector (as produced by AgenticCommerce):
+/// @notice Routes beforeAction/afterAction to named virtual functions. Override what you need.
+/// @dev    Data encoding per selector (as produced by AgenticCommerce):
 ///           setProvider : abi.encode(address provider, bytes optParams)
 ///           setBudget   : abi.encode(uint256 amount, bytes optParams)
 ///           fund        : optParams (raw bytes)
 ///           submit      : abi.encode(bytes32 deliverable, bytes optParams)
 ///           complete    : abi.encode(bytes32 reason, bytes optParams)
 ///           reject      : abi.encode(bytes32 reason, bytes optParams)
-///
-///         Example:
-///           contract MyHook is BaseACPHook {
-///               constructor(address acp) BaseACPHook(acp) {}
-///               function _postFund(uint256 jobId, bytes memory optParams) internal override {
-///                   // custom logic after fund
-///               }
-///           }
 abstract contract BaseACPHook is IACPHook {
-    /// @notice The AgenticCommerce contract this hook is bound to.
     address public immutable ACP;
 
     error OnlyAcp();
@@ -109,6 +98,13 @@ abstract contract BaseACPHook is IACPHook {
         bytes4 interfaceId
     ) external pure override returns (bool) {
         return interfaceId == type(IACPHook).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    /// @dev Read full job data from the ACP contract.
+    function _getJob(
+        uint256 jobId
+    ) internal view returns (IERC8183.Job memory) {
+        return IERC8183(ACP).getJob(jobId);
     }
 
     function _preSetProvider(

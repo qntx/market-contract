@@ -70,6 +70,7 @@ contract AgenticCommerceTest is Test {
 
         assertEq(jobId, 1);
         IERC8183.Job memory job = ac.getJob(jobId);
+        assertEq(job.id, jobId);
         assertEq(job.client, client);
         assertEq(job.provider, provider);
         assertEq(job.evaluator, evaluator);
@@ -133,8 +134,8 @@ contract AgenticCommerceTest is Test {
 
     function test_createJob_emitsEvent() public {
         vm.prank(client);
-        vm.expectEmit(true, true, false, true);
-        emit IERC8183.JobCreated(1, client, provider, evaluator, block.timestamp + DURATION);
+        vm.expectEmit(true, true, true, true);
+        emit IERC8183.JobCreated(1, client, provider, evaluator, block.timestamp + DURATION, address(0));
         ac.createJob(provider, evaluator, block.timestamp + DURATION, "event test", address(0));
     }
 
@@ -582,7 +583,7 @@ contract AgenticCommerceTest is Test {
         hook.setShouldRevertBefore(true);
 
         vm.prank(client);
-        vm.expectRevert(AgenticCommerce.HookCallFailed.selector);
+        vm.expectRevert("MockHook: beforeAction reverted");
         ac.setBudget(jobId, BUDGET, "");
     }
 
@@ -948,6 +949,17 @@ contract AgenticCommerceTest is Test {
         ac.complete(jobId, bytes32(0), "");
         assertEq(hook.lastBeforeSelector(), ac.complete.selector);
         assertEq(hook.lastAfterSelector(), ac.complete.selector);
+    }
+
+    function test_fund_revert_afterExpiry() public {
+        uint256 jobId = _createJob();
+        vm.prank(client);
+        ac.setBudget(jobId, BUDGET, "");
+
+        vm.warp(block.timestamp + DURATION + 1);
+        vm.prank(client);
+        vm.expectRevert(AgenticCommerce.JobNotExpired.selector);
+        ac.fund(jobId, BUDGET, "");
     }
 
     function test_claimRefund_exactlyAtExpiry() public {

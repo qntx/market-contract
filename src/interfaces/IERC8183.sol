@@ -19,6 +19,7 @@ interface IERC8183 {
 
     /// @notice Minimal job descriptor returned by getJob().
     struct Job {
+        uint256 id;
         address client;
         address provider;
         address evaluator;
@@ -32,7 +33,12 @@ interface IERC8183 {
 
     /// @notice Emitted when a new job is created in Open state.
     event JobCreated(
-        uint256 indexed jobId, address indexed client, address provider, address evaluator, uint256 expiredAt
+        uint256 indexed jobId,
+        address indexed client,
+        address indexed provider,
+        address evaluator,
+        uint256 expiredAt,
+        address hook
     );
 
     /// @notice Emitted when a provider is assigned to a job.
