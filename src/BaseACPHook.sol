@@ -17,6 +17,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 abstract contract BaseACPHook is IACPHook {
     address public immutable ACP;
 
+    error ZeroAddress();
     error OnlyAcp();
 
     modifier onlyAcp() {
@@ -31,6 +32,7 @@ abstract contract BaseACPHook is IACPHook {
     constructor(
         address acp_
     ) {
+        if (acp_ == address(0)) revert ZeroAddress();
         ACP = acp_;
     }
 

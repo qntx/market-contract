@@ -14,6 +14,8 @@ import {IACPHook} from "./interfaces/IACPHook.sol";
 /// @notice Job escrow with evaluator attestation for agent commerce.
 /// @dev    Single ERC-20 payment token per contract. Optional hooks for extensibility.
 ///         claimRefund is deliberately NOT hookable per spec.
+///         WARNING: Fee-on-transfer / rebasing tokens are NOT supported.
+///         Using such tokens as PAYMENT_TOKEN will cause fund lockups.
 contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     using SafeERC20 for IERC20;
 
@@ -45,6 +47,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
         uint16 fundedEvalFeeBp;
         uint256 budget;
         bytes32 deliverable;
+        address fundedTreasury;
         string description;
     }
 
@@ -58,6 +61,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
     error ProviderNotSet();
     error BudgetMismatch(uint256 actual, uint256 expected);
     error ZeroBudget();
+    error JobAlreadyExpired();
     error JobNotExpired();
     error FeeTooHigh();
     error JobDoesNotExist();
@@ -112,7 +116,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
         uint256 expiredAt,
         string calldata description,
         address hook
-    ) external override returns (uint256 jobId) {
+    ) external override nonReentrant returns (uint256 jobId) {
         if (evaluator == address(0)) revert ZeroAddress();
         if (expiredAt <= block.timestamp + MIN_EXPIRY_DURATION) revert InvalidExpiry();
         if (hook != address(0)) {
@@ -187,7 +191,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
         if (job.provider == address(0)) revert ProviderNotSet();
         if (job.budget == 0) revert ZeroBudget();
         if (job.budget != expectedBudget) revert BudgetMismatch(job.budget, expectedBudget);
-        if (block.timestamp >= job.expiredAt) revert JobNotExpired();
+        if (block.timestamp >= job.expiredAt) revert JobAlreadyExpired();
 
         _hookBefore(job.hook, jobId, msg.sig, optParams);
 
@@ -196,6 +200,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
         job.fundedFeeBp = uint16(platformFeeBp);
         // forge-lint: disable-next-line(unsafe-typecast)
         job.fundedEvalFeeBp = uint16(evaluatorFeeBp);
+        job.fundedTreasury = treasury;
 
         PAYMENT_TOKEN.safeTransferFrom(msg.sender, address(this), job.budget);
         emit JobFunded(jobId, msg.sender, job.budget);
@@ -243,15 +248,15 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
         uint256 eFee = (budget * job.fundedEvalFeeBp) / BP_DENOMINATOR;
         uint256 net = budget - pFee - eFee;
 
-        if (pFee > 0) PAYMENT_TOKEN.safeTransfer(treasury, pFee);
+        if (pFee > 0) PAYMENT_TOKEN.safeTransfer(job.fundedTreasury, pFee);
         if (eFee > 0) {
             PAYMENT_TOKEN.safeTransfer(job.evaluator, eFee);
             emit EvaluatorFeePaid(jobId, job.evaluator, eFee);
         }
-        if (net > 0) PAYMENT_TOKEN.safeTransfer(job.provider, net);
+        PAYMENT_TOKEN.safeTransfer(job.provider, net);
 
         emit JobCompleted(jobId, msg.sender, reason);
-        if (net > 0) emit PaymentReleased(jobId, job.provider, net);
+        emit PaymentReleased(jobId, job.provider, net);
 
         _hookAfter(job.hook, jobId, msg.sig, hookData);
     }
