@@ -665,6 +665,19 @@ contract AgenticCommerceTest is Test {
         ac.claimRefund(id);
     }
 
+    function test_claimRefund_revert_fromRejected() public {
+        uint256 id = _rejected();
+        vm.warp(block.timestamp + EXPIRY);
+        vm.expectRevert(abi.encodeWithSelector(AgenticCommerce.InvalidStatus.selector, IERC8183.Status.Rejected));
+        ac.claimRefund(id);
+    }
+
+    function test_claimRefund_revert_fromExpired() public {
+        uint256 id = _expired();
+        vm.expectRevert(abi.encodeWithSelector(AgenticCommerce.InvalidStatus.selector, IERC8183.Status.Expired));
+        ac.claimRefund(id);
+    }
+
     // =====================================================================
     //  getJob
     // =====================================================================
@@ -715,6 +728,12 @@ contract AgenticCommerceTest is Test {
         vm.prank(owner);
         vm.expectRevert(AgenticCommerce.FeeTooHigh.selector);
         ac.setEvaluatorFee(4751);
+    }
+
+    function test_setEvaluatorFee_revert_notOwner() public {
+        vm.prank(rando);
+        vm.expectRevert();
+        ac.setEvaluatorFee(100);
     }
 
     function test_setTreasury() public {
@@ -940,16 +959,43 @@ contract AgenticCommerceTest is Test {
         assertEq(token.balanceOf(address(ac)), 0);
     }
 
-    function test_edge_evaluatorIsClientAndProvider() public {
+    function test_edge_evaluatorIsClient_accounting() public {
+        vm.prank(client);
+        uint256 id = ac.createJob(provider, client, block.timestamp + EXPIRY, "j", address(0));
+        vm.prank(client);
+        ac.setBudget(id, BUDGET, "");
+
+        uint256 cBal = token.balanceOf(client);
+        vm.prank(client);
+        ac.fund(id, BUDGET, "");
+
+        vm.prank(provider);
+        ac.submit(id, DELIVERABLE, "");
+        vm.prank(client);
+        ac.complete(id, REASON, "");
+
+        // client paid BUDGET, gets eFee back as evaluator
+        assertEq(token.balanceOf(client), cBal - BUDGET + _eFee(BUDGET));
+        assertEq(token.balanceOf(provider), BUDGET - _pFee(BUDGET) - _eFee(BUDGET));
+        assertEq(token.balanceOf(treasury), _pFee(BUDGET));
+    }
+
+    function test_edge_allRolesAreSameAddress() public {
         vm.prank(client);
         uint256 id = ac.createJob(client, client, block.timestamp + EXPIRY, "j", address(0));
+
+        uint256 cBal = token.balanceOf(client);
         vm.startPrank(client);
         ac.setBudget(id, BUDGET, "");
         ac.fund(id, BUDGET, "");
         ac.submit(id, DELIVERABLE, "");
         ac.complete(id, REASON, "");
         vm.stopPrank();
+
         _assertStatus(id, IERC8183.Status.Completed);
+        // client = provider + evaluator: gets back net + eFee = BUDGET - pFee
+        assertEq(token.balanceOf(client), cBal - _pFee(BUDGET));
+        assertEq(token.balanceOf(treasury), _pFee(BUDGET));
     }
 
     function test_edge_multipleJobsIsolation() public {
