@@ -6,58 +6,55 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @dev Configurable mock hook for testing beforeAction/afterAction callbacks.
 contract MockHook is IACPHook {
+    bool public revertBefore;
+    bool public revertAfter;
+
+    uint256 public beforeCalls;
+    uint256 public afterCalls;
+
+    uint256 public lastJobId;
+    bytes4 public lastSelector;
+    bytes public lastData;
+
+    function setRevertBefore(
+        bool v
+    ) external {
+        revertBefore = v;
+    }
+
+    function setRevertAfter(
+        bool v
+    ) external {
+        revertAfter = v;
+    }
+
     function supportsInterface(
-        bytes4 interfaceId
+        bytes4 id
     ) external pure override returns (bool) {
-        return interfaceId == type(IACPHook).interfaceId || interfaceId == type(IERC165).interfaceId;
-    }
-
-    bool public shouldRevertBefore;
-    bool public shouldRevertAfter;
-
-    uint256 public beforeCallCount;
-    uint256 public afterCallCount;
-
-    bytes4 public lastBeforeSelector;
-    bytes4 public lastAfterSelector;
-    uint256 public lastBeforeJobId;
-    uint256 public lastAfterJobId;
-    bytes public lastBeforeData;
-    bytes public lastAfterData;
-
-    function setShouldRevertBefore(
-        bool val
-    ) external {
-        shouldRevertBefore = val;
-    }
-
-    function setShouldRevertAfter(
-        bool val
-    ) external {
-        shouldRevertAfter = val;
+        return id == type(IACPHook).interfaceId || id == type(IERC165).interfaceId;
     }
 
     function beforeAction(
         uint256 jobId,
-        bytes4 selector,
+        bytes4 sel,
         bytes calldata data
     ) external override {
-        if (shouldRevertBefore) revert("MockHook: beforeAction reverted");
-        beforeCallCount++;
-        lastBeforeJobId = jobId;
-        lastBeforeSelector = selector;
-        lastBeforeData = data;
+        if (revertBefore) revert("hook:before");
+        beforeCalls++;
+        lastJobId = jobId;
+        lastSelector = sel;
+        lastData = data;
     }
 
     function afterAction(
         uint256 jobId,
-        bytes4 selector,
+        bytes4 sel,
         bytes calldata data
     ) external override {
-        if (shouldRevertAfter) revert("MockHook: afterAction reverted");
-        afterCallCount++;
-        lastAfterJobId = jobId;
-        lastAfterSelector = selector;
-        lastAfterData = data;
+        if (revertAfter) revert("hook:after");
+        afterCalls++;
+        lastJobId = jobId;
+        lastSelector = sel;
+        lastData = data;
     }
 }

@@ -23,6 +23,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
     uint256 public constant BP_DENOMINATOR = 10_000;
     uint256 public constant HOOK_GAS_LIMIT = 500_000;
     uint256 public constant MIN_EXPIRY_DURATION = 5 minutes;
+    uint256 public constant MAX_DESCRIPTION_LENGTH = 1024;
 
     IERC20 public immutable PAYMENT_TOKEN;
 
@@ -35,7 +36,8 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
 
     /// @dev Storage-optimised job struct. Packed fields in slot 3 save ~3 slots per job.
     ///      Layout: [client|provider|evaluator] = 3 slots, [hook+status+expiredAt+fees] = 1 slot,
-    ///      [budget] = 1 slot, [deliverable] = 1 slot, [description ptr] = 1 slot → 7 total.
+    ///      [budget] = 1 slot, [deliverable] = 1 slot, [fundedTreasury] = 1 slot,
+    ///      [description ptr] = 1 slot → 8 total.
     struct JobStorage {
         address client;
         address provider;
@@ -67,7 +69,10 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
     error JobDoesNotExist();
     error HookNotWhitelisted();
     error HookInterfaceNotSupported();
+    error DescriptionTooLong();
 
+    event EvaluatorFeePaid(uint256 indexed jobId, address indexed evaluator, uint256 amount);
+    event HookWhitelistUpdated(address indexed hook, bool status);
     event PlatformFeeUpdated(uint256 oldFeeBp, uint256 newFeeBp);
     event EvaluatorFeeUpdated(uint256 oldFeeBp, uint256 newFeeBp);
     event TreasuryUpdated(address oldTreasury, address newTreasury);
@@ -118,6 +123,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
         address hook
     ) external override nonReentrant returns (uint256 jobId) {
         if (evaluator == address(0)) revert ZeroAddress();
+        if (bytes(description).length > MAX_DESCRIPTION_LENGTH) revert DescriptionTooLong();
         if (expiredAt <= block.timestamp + MIN_EXPIRY_DURATION) revert InvalidExpiry();
         if (hook != address(0)) {
             if (!whitelistedHooks[hook]) revert HookNotWhitelisted();
@@ -217,6 +223,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
         JobStorage storage job = _jobs[jobId];
         if (msg.sender != job.provider) revert Unauthorized();
         if (job.status != Status.Funded) revert InvalidStatus(job.status);
+        if (block.timestamp >= job.expiredAt) revert JobAlreadyExpired();
 
         bytes memory hookData = abi.encode(deliverable, optParams);
         _hookBefore(job.hook, jobId, msg.sig, hookData);
