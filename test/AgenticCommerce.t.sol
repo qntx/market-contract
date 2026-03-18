@@ -22,6 +22,7 @@ contract AgenticCommerceTest is Test {
 
     uint256 public constant BUDGET = 1000e6;
     uint256 public constant FEE_BP = 250; // 2.5%
+    uint256 public constant EVAL_FEE_BP = 100; // 1%
     uint256 public constant DURATION = 7 days;
 
     function setUp() public {
@@ -29,7 +30,10 @@ contract AgenticCommerceTest is Test {
         hook = new MockHook();
 
         vm.prank(owner);
-        ac = new AgenticCommerce(address(token), FEE_BP, treasury, owner);
+        ac = new AgenticCommerce(address(token), FEE_BP, EVAL_FEE_BP, treasury, owner);
+
+        vm.prank(owner);
+        ac.setHookWhitelist(address(hook), true);
 
         token.mint(client, 100_000e6);
         vm.prank(client);
@@ -102,6 +106,29 @@ contract AgenticCommerceTest is Test {
         vm.prank(client);
         vm.expectRevert(AgenticCommerce.InvalidExpiry.selector);
         ac.createJob(provider, evaluator, block.timestamp, "bad", address(0));
+    }
+
+    function test_createJob_revert_expiryTooShort() public {
+        vm.prank(client);
+        vm.expectRevert(AgenticCommerce.InvalidExpiry.selector);
+        ac.createJob(provider, evaluator, block.timestamp + 4 minutes, "bad", address(0));
+    }
+
+    function test_createJob_revert_hookNotWhitelisted() public {
+        MockHook rogue = new MockHook();
+        vm.prank(client);
+        vm.expectRevert(AgenticCommerce.HookNotWhitelisted.selector);
+        ac.createJob(provider, evaluator, block.timestamp + DURATION, "bad", address(rogue));
+    }
+
+    function test_createJob_revert_hookBadInterface() public {
+        address badHook = address(new MockERC20("X", "X", 18));
+        vm.prank(owner);
+        ac.setHookWhitelist(badHook, true);
+
+        vm.prank(client);
+        vm.expectRevert(AgenticCommerce.HookInterfaceNotSupported.selector);
+        ac.createJob(provider, evaluator, block.timestamp + DURATION, "bad", badHook);
     }
 
     function test_createJob_emitsEvent() public {
@@ -277,8 +304,9 @@ contract AgenticCommerceTest is Test {
         uint256 jobId = _createFundAndSubmitJob();
         bytes32 reason = keccak256("good work");
 
-        uint256 fee = (BUDGET * FEE_BP) / 10_000;
-        uint256 providerAmount = BUDGET - fee;
+        uint256 platformFee = (BUDGET * FEE_BP) / 10_000;
+        uint256 evalFee = (BUDGET * EVAL_FEE_BP) / 10_000;
+        uint256 providerAmount = BUDGET - platformFee - evalFee;
 
         vm.prank(evaluator);
         ac.complete(jobId, reason, "");
@@ -286,14 +314,15 @@ contract AgenticCommerceTest is Test {
         IERC8183.Job memory job = ac.getJob(jobId);
         assertEq(uint8(job.status), uint8(IERC8183.Status.Completed));
         assertEq(token.balanceOf(provider), providerAmount);
-        assertEq(token.balanceOf(treasury), fee);
+        assertEq(token.balanceOf(treasury), platformFee);
+        assertEq(token.balanceOf(evaluator), evalFee);
         assertEq(token.balanceOf(address(ac)), 0);
     }
 
     function test_complete_zeroFee() public {
         // Deploy with 0% fee
         vm.prank(owner);
-        AgenticCommerce acNoFee = new AgenticCommerce(address(token), 0, treasury, owner);
+        AgenticCommerce acNoFee = new AgenticCommerce(address(token), 0, 0, treasury, owner);
 
         token.mint(client, BUDGET);
         vm.prank(client);
@@ -578,13 +607,48 @@ contract AgenticCommerceTest is Test {
     function test_setPlatformFee_revert_tooHigh() public {
         vm.prank(owner);
         vm.expectRevert(AgenticCommerce.FeeTooHigh.selector);
-        ac.setPlatformFee(5001);
+        ac.setPlatformFee(4901); // 4901 + 100 (evalFee) > 5000
     }
 
     function test_setPlatformFee_revert_notOwner() public {
         vm.prank(anyone);
         vm.expectRevert();
         ac.setPlatformFee(100);
+    }
+
+    function test_setEvaluatorFee() public {
+        vm.prank(owner);
+        ac.setEvaluatorFee(200);
+        assertEq(ac.evaluatorFeeBp(), 200);
+    }
+
+    function test_setEvaluatorFee_revert_tooHigh() public {
+        vm.prank(owner);
+        vm.expectRevert(AgenticCommerce.FeeTooHigh.selector);
+        ac.setEvaluatorFee(4751); // 250 + 4751 > 5000
+    }
+
+    function test_setHookWhitelist() public {
+        address newHook = makeAddr("newHook");
+        vm.prank(owner);
+        ac.setHookWhitelist(newHook, true);
+        assertTrue(ac.whitelistedHooks(newHook));
+
+        vm.prank(owner);
+        ac.setHookWhitelist(newHook, false);
+        assertFalse(ac.whitelistedHooks(newHook));
+    }
+
+    function test_setHookWhitelist_revert_zeroAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(AgenticCommerce.ZeroAddress.selector);
+        ac.setHookWhitelist(address(0), true);
+    }
+
+    function test_setHookWhitelist_revert_notOwner() public {
+        vm.prank(anyone);
+        vm.expectRevert();
+        ac.setHookWhitelist(address(hook), true);
     }
 
     function test_setTreasury() public {
@@ -643,13 +707,16 @@ contract AgenticCommerceTest is Test {
         // 5. Complete
         uint256 providerBefore = token.balanceOf(provider);
         uint256 treasuryBefore = token.balanceOf(treasury);
+        uint256 evalBefore = token.balanceOf(evaluator);
 
         vm.prank(evaluator);
         ac.complete(jobId, keccak256("approved"), "");
 
-        uint256 fee = (BUDGET * FEE_BP) / 10_000;
-        assertEq(token.balanceOf(provider), providerBefore + BUDGET - fee);
-        assertEq(token.balanceOf(treasury), treasuryBefore + fee);
+        uint256 platformFee = (BUDGET * FEE_BP) / 10_000;
+        uint256 evalFee = (BUDGET * EVAL_FEE_BP) / 10_000;
+        assertEq(token.balanceOf(provider), providerBefore + BUDGET - platformFee - evalFee);
+        assertEq(token.balanceOf(treasury), treasuryBefore + platformFee);
+        assertEq(token.balanceOf(evaluator), evalBefore + evalFee);
         assertEq(uint8(ac.getJob(jobId).status), uint8(IERC8183.Status.Completed));
     }
 
@@ -694,13 +761,15 @@ contract AgenticCommerceTest is Test {
 
     function testFuzz_feeDistribution(
         uint256 budget,
-        uint256 feeBp
+        uint256 feeBp,
+        uint256 evalFeeBp
     ) public {
         budget = bound(budget, 1, 1_000_000e6);
-        feeBp = bound(feeBp, 0, 5000);
+        feeBp = bound(feeBp, 0, 2500);
+        evalFeeBp = bound(evalFeeBp, 0, 2500);
 
         vm.prank(owner);
-        AgenticCommerce acFuzz = new AgenticCommerce(address(token), feeBp, treasury, owner);
+        AgenticCommerce acFuzz = new AgenticCommerce(address(token), feeBp, evalFeeBp, treasury, owner);
 
         token.mint(client, budget);
         vm.prank(client);
@@ -717,30 +786,33 @@ contract AgenticCommerceTest is Test {
 
         uint256 providerBefore = token.balanceOf(provider);
         uint256 treasuryBefore = token.balanceOf(treasury);
+        uint256 evalBefore = token.balanceOf(evaluator);
 
         vm.prank(evaluator);
         acFuzz.complete(jobId, bytes32(0), "");
 
-        uint256 expectedFee = (budget * feeBp) / 10_000;
-        uint256 expectedProvider = budget - expectedFee;
+        uint256 expectedPlatformFee = (budget * feeBp) / 10_000;
+        uint256 expectedEvalFee = (budget * evalFeeBp) / 10_000;
+        uint256 expectedProvider = budget - expectedPlatformFee - expectedEvalFee;
 
         assertEq(token.balanceOf(provider), providerBefore + expectedProvider);
-        assertEq(token.balanceOf(treasury), treasuryBefore + expectedFee);
+        assertEq(token.balanceOf(treasury), treasuryBefore + expectedPlatformFee);
+        assertEq(token.balanceOf(evaluator), evalBefore + expectedEvalFee);
     }
 
     function test_constructor_revert_zeroPaymentToken() public {
         vm.expectRevert(AgenticCommerce.ZeroAddress.selector);
-        new AgenticCommerce(address(0), FEE_BP, treasury, owner);
+        new AgenticCommerce(address(0), FEE_BP, EVAL_FEE_BP, treasury, owner);
     }
 
     function test_constructor_revert_zeroTreasury() public {
         vm.expectRevert(AgenticCommerce.ZeroAddress.selector);
-        new AgenticCommerce(address(token), FEE_BP, address(0), owner);
+        new AgenticCommerce(address(token), FEE_BP, EVAL_FEE_BP, address(0), owner);
     }
 
     function test_constructor_revert_feeTooHigh() public {
         vm.expectRevert(AgenticCommerce.FeeTooHigh.selector);
-        new AgenticCommerce(address(token), 5001, treasury, owner);
+        new AgenticCommerce(address(token), 3000, 2001, treasury, owner);
     }
 
     function test_complete_usesSnapshotedFee() public {
@@ -750,8 +822,11 @@ contract AgenticCommerceTest is Test {
         vm.prank(client);
         ac.fund(jobId, BUDGET, "");
 
+        // Change fees AFTER funding — should NOT affect this job
         vm.prank(owner);
-        ac.setPlatformFee(5000);
+        ac.setPlatformFee(4900);
+        vm.prank(owner);
+        ac.setEvaluatorFee(0);
 
         vm.prank(provider);
         ac.submit(jobId, keccak256("d"), "");
@@ -759,10 +834,13 @@ contract AgenticCommerceTest is Test {
         vm.prank(evaluator);
         ac.complete(jobId, bytes32(0), "");
 
-        uint256 expectedFee = (BUDGET * FEE_BP) / 10_000;
-        uint256 expectedProvider = BUDGET - expectedFee;
+        // Uses snapshotted rates from fund time
+        uint256 expectedPlatformFee = (BUDGET * FEE_BP) / 10_000;
+        uint256 expectedEvalFee = (BUDGET * EVAL_FEE_BP) / 10_000;
+        uint256 expectedProvider = BUDGET - expectedPlatformFee - expectedEvalFee;
         assertEq(token.balanceOf(provider), expectedProvider);
-        assertEq(token.balanceOf(treasury), expectedFee);
+        assertEq(token.balanceOf(treasury), expectedPlatformFee);
+        assertEq(token.balanceOf(evaluator), expectedEvalFee);
     }
 
     function test_reject_revert_fromRejected() public {
@@ -893,7 +971,60 @@ contract AgenticCommerceTest is Test {
         vm.prank(evaluator);
         ac.complete(jobId, bytes32(0), "");
 
+        // 1 * 250 / 10000 = 0 (rounds down), 1 * 100 / 10000 = 0
         assertEq(token.balanceOf(provider), 1);
         assertEq(token.balanceOf(address(ac)), 0);
+    }
+
+    function test_evaluatorFee_paidOnComplete() public {
+        uint256 jobId = _createFundAndSubmitJob();
+
+        uint256 evalBefore = token.balanceOf(evaluator);
+        vm.prank(evaluator);
+        ac.complete(jobId, bytes32(0), "");
+
+        uint256 expectedEvalFee = (BUDGET * EVAL_FEE_BP) / 10_000;
+        assertEq(token.balanceOf(evaluator), evalBefore + expectedEvalFee);
+    }
+
+    function test_evaluatorFee_emitsEvent() public {
+        uint256 jobId = _createFundAndSubmitJob();
+        uint256 expectedEvalFee = (BUDGET * EVAL_FEE_BP) / 10_000;
+
+        vm.prank(evaluator);
+        vm.expectEmit(true, true, false, true);
+        emit IERC8183.EvaluatorFeePaid(jobId, evaluator, expectedEvalFee);
+        ac.complete(jobId, bytes32(0), "");
+    }
+
+    function test_evaluatorFee_snapshotedAtFund() public {
+        uint256 jobId = _createJob();
+        vm.prank(client);
+        ac.setBudget(jobId, BUDGET, "");
+        vm.prank(client);
+        ac.fund(jobId, BUDGET, "");
+
+        // Change eval fee AFTER funding
+        vm.prank(owner);
+        ac.setEvaluatorFee(0);
+
+        vm.prank(provider);
+        ac.submit(jobId, keccak256("d"), "");
+
+        uint256 evalBefore = token.balanceOf(evaluator);
+        vm.prank(evaluator);
+        ac.complete(jobId, bytes32(0), "");
+
+        // Uses snapshotted rate (EVAL_FEE_BP = 100)
+        uint256 expectedEvalFee = (BUDGET * EVAL_FEE_BP) / 10_000;
+        assertEq(token.balanceOf(evaluator), evalBefore + expectedEvalFee);
+    }
+
+    function test_hookWhitelist_emitsEvent() public {
+        address newHook = makeAddr("eventHook");
+        vm.prank(owner);
+        vm.expectEmit(true, false, false, true);
+        emit IERC8183.HookWhitelistUpdated(newHook, true);
+        ac.setHookWhitelist(newHook, true);
     }
 }

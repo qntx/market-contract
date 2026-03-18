@@ -62,6 +62,12 @@ interface IERC8183 {
     /// @notice Emitted when escrowed funds are refunded to the client.
     event Refunded(uint256 indexed jobId, address indexed client, uint256 amount);
 
+    /// @notice Emitted when evaluator fee is paid on job completion.
+    event EvaluatorFeePaid(uint256 indexed jobId, address indexed evaluator, uint256 amount);
+
+    /// @notice Emitted when a hook address is added to or removed from the whitelist.
+    event HookWhitelistUpdated(address indexed hook, bool status);
+
     /// @notice Create a job in Open state.
     /// @dev    Provider MAY be address(0); client MUST call setProvider before fund.
     ///         Evaluator MUST NOT be address(0). expiredAt MUST be in the future.

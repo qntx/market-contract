@@ -12,18 +12,20 @@ import {AgenticCommerce} from "../src/AgenticCommerce.sol";
 ///   Required env vars:
 ///     PAYMENT_TOKEN  — ERC-20 token address for escrow
 ///     TREASURY       — Platform fee recipient address
-///     PLATFORM_FEE_BP — Platform fee in basis points (e.g. 250 = 2.5%)
-///     OWNER          — Contract owner address (optional, defaults to deployer)
+///     PLATFORM_FEE_BP  — Platform fee in basis points (e.g. 250 = 2.5%)
+///     EVALUATOR_FEE_BP — Evaluator fee in basis points (e.g. 100 = 1%)
+///     OWNER            — Contract owner address (optional, defaults to deployer)
 contract DeployAgenticCommerce is Script {
     function run() external {
         address paymentToken = vm.envAddress("PAYMENT_TOKEN");
         address treasury = vm.envAddress("TREASURY");
         uint256 platformFeeBp = vm.envUint("PLATFORM_FEE_BP");
+        uint256 evaluatorFeeBp = vm.envOr("EVALUATOR_FEE_BP", uint256(0));
         address owner = vm.envOr("OWNER", msg.sender);
 
         vm.startBroadcast();
 
-        AgenticCommerce ac = new AgenticCommerce(paymentToken, platformFeeBp, treasury, owner);
+        AgenticCommerce ac = new AgenticCommerce(paymentToken, platformFeeBp, evaluatorFeeBp, treasury, owner);
 
         vm.stopBroadcast();
 
@@ -31,6 +33,7 @@ contract DeployAgenticCommerce is Script {
         console.log("  paymentToken:", paymentToken);
         console.log("  treasury:", treasury);
         console.log("  platformFeeBp:", platformFeeBp);
+        console.log("  evaluatorFeeBp:", evaluatorFeeBp);
         console.log("  owner:", owner);
     }
 }

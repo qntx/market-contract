@@ -2,9 +2,16 @@
 pragma solidity ^0.8.28;
 
 import {IACPHook} from "../../src/interfaces/IACPHook.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @dev Configurable mock hook for testing beforeAction/afterAction callbacks.
 contract MockHook is IACPHook {
+    function supportsInterface(
+        bytes4 interfaceId
+    ) external pure override returns (bool) {
+        return interfaceId == type(IACPHook).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
     bool public shouldRevertBefore;
     bool public shouldRevertAfter;
 

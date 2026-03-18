@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+
 /// @title IACPHook — Optional hook interface for ERC-8183 Agentic Commerce
 /// @notice Called before and after core actions to enable protocol extensions
 ///         (validation, reputation, fees) without modifying the core contract.
@@ -8,7 +10,8 @@ pragma solidity ^0.8.28;
 ///         produce new selector values without changing this interface.
 ///         claimRefund is deliberately NOT hookable — refunds after expiry cannot
 ///         be blocked by a malicious hook.
-interface IACPHook {
+///         Implementations MUST return true for `supportsInterface(type(IACPHook).interfaceId)`.
+interface IACPHook is IERC165 {
     /// @notice Called before a core action executes.
     /// @dev    MAY revert to prevent the action from executing.
     /// @param jobId    Job identifier.
