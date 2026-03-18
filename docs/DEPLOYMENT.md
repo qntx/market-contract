@@ -320,23 +320,70 @@ cast call $AC_ADDRESS "whitelistedHooks(address)(bool)" $HOOK_ADDRESS --rpc-url 
 
 ## Multi-Chain Deployment
 
-Deploy identical contracts across chains using deterministic deployment (CREATE2) for consistent addresses:
+Deploy identical contracts across chains using **CREATE2 deterministic deployment** for consistent addresses.
+
+### How CREATE2 Works
+
+Standard `CREATE` address depends on `deployer + nonce`, which varies per chain. CREATE2 uses:
+
+```text
+address = keccak256(0xff ++ deployer ++ salt ++ keccak256(initCode))[12:]
+```
+
+Same `deployer`, `salt`, and `initCode` (bytecode + constructor args) → **same address on every chain**.
+
+### Single Chain with CREATE2
 
 ```bash
-forge create src/AgenticCommerce.sol:AgenticCommerce \
-  --constructor-args $PAYMENT_TOKEN $PLATFORM_FEE_BP $EVALUATOR_FEE_BP $TREASURY $OWNER \
+forge script script/DeployMultiChain.s.sol:DeployMultiChain \
   --rpc-url $RPC_URL \
   --private-key $PRIVATE_KEY \
-  --create2 \
-  --salt 0x0000000000000000000000000000000000000000000000000000000000000001
+  --broadcast \
+  --verify \
+  --etherscan-api-key $ETHERSCAN_API_KEY
 ```
+
+### Predict Address Before Deployment
+
+```bash
+forge script script/DeployMultiChain.s.sol:DeployMultiChain \
+  --sig "predict()" \
+  --rpc-url $RPC_URL
+```
+
+### Batch Multi-Chain Deployment
+
+Edit `script/deploy-multichain.sh` to configure your chains, then:
+
+```bash
+chmod +x script/deploy-multichain.sh
+
+export TREASURY=0x...
+export PLATFORM_FEE_BP=250
+export EVALUATOR_FEE_BP=100
+export OWNER=0x...
+
+./script/deploy-multichain.sh
+```
+
+### Important Considerations
 
 | Consideration | Details |
 | ------------- | ------- |
-| `PAYMENT_TOKEN` | Different address per chain (e.g., USDC on Ethereum ≠ USDC on Base) |
-| `TREASURY` | Can be same multisig if chain-agnostic, otherwise deploy per chain |
+| `PAYMENT_TOKEN` | **Different address per chain** (e.g., USDC on Ethereum ≠ USDC on Base). This means constructor args differ, so addresses will differ unless you use a wrapper or same token address. |
+| Same address requirement | To get identical addresses, `PAYMENT_TOKEN` must be the same. Consider using a canonical bridge token or deploying your own token with CREATE2 first. |
+| `TREASURY` | Can be same multisig if chain-agnostic (e.g., Safe on multiple chains) |
+| `SALT` | Use the same salt across all chains. Default: `0x01` |
 | Gas costs | Varies significantly — test on each chain |
-| EIP-1153 | Verify support on each target chain |
+| EIP-1153 | Verify transient storage support on each target chain |
+
+### Achieving Identical Addresses
+
+For truly identical addresses across chains, you need identical constructor args. Options:
+
+1. **Use same token address**: Deploy your own ERC-20 with CREATE2 first
+2. **Accept different addresses**: Use chain-specific USDC/USDT addresses (addresses will differ)
+3. **Factory pattern**: Deploy via a CREATE2 factory like [Arachnid's Deterministic Deployment Proxy](https://github.com/Arachnid/deterministic-deployment-proxy)
 
 ---
 
