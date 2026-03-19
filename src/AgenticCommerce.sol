@@ -265,7 +265,7 @@ contract AgenticCommerce is IERC8183, IERC165, ReentrancyGuardTransient, Ownable
             PAYMENT_TOKEN.safeTransfer(job.evaluator, eFee);
             emit EvaluatorFeePaid(jobId, job.evaluator, eFee);
         }
-        PAYMENT_TOKEN.safeTransfer(job.provider, net);
+        if (net > 0) PAYMENT_TOKEN.safeTransfer(job.provider, net);
 
         emit JobCompleted(jobId, msg.sender, reason);
         emit PaymentReleased(jobId, job.provider, net);
