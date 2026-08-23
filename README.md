@@ -39,14 +39,6 @@ stateDiagram-v2
     Expired --> [*]: refund to client
 ```
 
-## Deployments
-
-| Chain | Address | Payment Token | Explorer |
-| ----- | ------- | ------------- | -------- |
-| Monad | [`0xE8c4FFb4A6F7B8040a7AE39F6651290E06A40725`](https://monad.socialscan.io/address/0xE8c4FFb4A6F7B8040a7AE39F6651290E06A40725) | USDC | [Socialscan](https://monad.socialscan.io/address/0xE8c4FFb4A6F7B8040a7AE39F6651290E06A40725) · [MonadVision](https://monadvision.com/address/0xE8c4FFb4A6F7B8040a7AE39F6651290E06A40725) |
-
----
-
 ## Features
 
 ### Core Protocol
