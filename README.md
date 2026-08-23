@@ -15,8 +15,6 @@ A production-ready, gas-optimized implementation of [ERC-8183: Agentic Commerce]
 
 </div>
 
----
-
 ## Overview
 
 ERC-8183 defines a protocol where a **client** locks funds, a **provider** submits work, and an **evaluator** attests completion or rejection. This contract manages the full job lifecycle with strict state machine enforcement, optional hook extensibility, and snapshot-based fee distribution.
@@ -69,8 +67,6 @@ stateDiagram-v2
 - **Hook whitelist** — admin-controlled allowlist with ERC-165 interface validation
 - **BaseACPHook** — abstract router that decodes calldata and dispatches to named virtual functions
 
----
-
 ## Contract Constants
 
 | Constant | Value | Description |
@@ -80,8 +76,6 @@ stateDiagram-v2
 | `HOOK_GAS_LIMIT` | `500_000` | Max gas forwarded to each hook call |
 | `MIN_EXPIRY_DURATION` | `5 minutes` | Minimum job time-to-live |
 | `MAX_DESCRIPTION_LENGTH` | `1024` | Max job description size in bytes |
-
----
 
 ## Quick Start
 
@@ -119,8 +113,6 @@ forge script script/DeployAgenticCommerce.s.sol:DeployAgenticCommerce \
 
 See [Deployment Guide](docs/DEPLOYMENT.md) for full instructions including hardware wallet, Gnosis Safe, multi-chain, and post-deployment verification.
 
----
-
 ## Spec Compliance
 
 This implementation covers all **MUST/SHALL** requirements of ERC-8183:
@@ -141,8 +133,6 @@ This implementation covers all **MUST/SHALL** requirements of ERC-8183:
 - **Expiry check in `fund()`** — cannot fund already-expired jobs
 - **Hook whitelist with ERC-165** — only validated hooks can be attached
 - **Disabled `renounceOwnership()`** — prevents irreversible loss of admin control
-
----
 
 ## Installation
 
@@ -169,8 +159,6 @@ import {IERC8183} from "market-contract/interfaces/IERC8183.sol";
 import {IACPHook} from "market-contract/interfaces/IACPHook.sol";
 ```
 
----
-
 ## Hook Development
 
 Extend protocol functionality by implementing `IACPHook` via `BaseACPHook`:
@@ -196,8 +184,6 @@ contract MyHook is BaseACPHook {
 Register hooks via `setHookWhitelist(address, true)` before attaching to jobs.
 
 See [Hook Development Guide](docs/HOOK_DEVELOPMENT.md) for the complete reference including cookbook patterns, security guidelines, and advanced topics.
-
----
 
 ## License
 
