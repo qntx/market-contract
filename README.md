@@ -159,9 +159,28 @@ remappings = [
 
 ```solidity
 import {ERC8183} from "market-contract/ERC8183.sol";
+import {ERC8183WithAuthorization} from "market-contract/ERC8183WithAuthorization.sol";
 import {IERC8183} from "market-contract/interfaces/IERC8183.sol";
 import {IERC8183Hook} from "market-contract/interfaces/IERC8183Hook.sol";
 import {BaseERC8183Hook} from "market-contract/BaseERC8183Hook.sol";
+```
+
+## Facilitators
+
+`ERC8183WithAuthorization` is a separate bytecode that inherits the kernel and adds ERC-3009-style EIP-712 authorizations. Relayers call `*WithAuthorization`; kernel internals run with `actor = signer`. There is no ERC-2771 forwarder.
+
+- Domain: name `"ERC8183"`, version `"1"` (`DOMAIN_SEPARATOR()`)
+- Unordered packed nonces: `bytes32((uint256(uint160(signer)) << 96) | uint256(nonce))`
+- ERC-1271 via OpenZeppelin `SignatureChecker`
+- `completeWithAuthorization` / `rejectWithAuthorization` bind `submittedAt` from storage so a pre-submit signature cannot apply after submit
+- `cancelAuthorization(uint72 nonce)` is signer-only (not relayable)
+- Hooks and `onDisbursement` still receive canonical kernel selectors (`complete`, `fund`, …), never `*WithAuthorization`
+
+Same constructor args as `ERC8183`. Different bytecode ⇒ different address.
+
+```bash
+forge script script/DeployERC8183WithAuthorization.s.sol:DeployERC8183WithAuthorization \
+  --rpc-url $RPC_URL --broadcast --verify
 ```
 
 ## Hook Development
