@@ -30,9 +30,10 @@ stateDiagram-v2
     Open --> Submitted: submit (provider; budget == 0)
     Open --> Rejected: reject (client or provider)
     Open --> Expired: claimRefund (anyone, after expiredAt)
+    Funded --> Funded: submitClaim / settleClaim / approveClaim / rejectClaim
     Funded --> Submitted: submit (provider)
     Funded --> Rejected: reject (evaluator)
-    Funded --> Expired: claimRefund (anyone, after expiredAt)
+    Funded --> Expired: claimRefund (anyone, after expiredAt, no pending)
     Submitted --> Completed: complete (evaluator)
     Submitted --> Rejected: reject (evaluator)
     Submitted --> Expired: claimRefund (anyone, after expiredAt + grace)
@@ -51,6 +52,7 @@ stateDiagram-v2
 - **Fund delta check** — `balanceOf` must increase by exactly `budget` (`UnexpectedFundedAmount` otherwise)
 - **Evaluation grace period** — Submitted `claimRefund` waits `expiredAt + 1 hours`
 - **Payout receiver + IDisburser** — optional callback at payout time (ERC-165, not cached)
+- **Claim settlement** — cumulative `submitClaim` / `settleClaim` / `approveClaim` / `rejectClaim` on `settledAmount` while Funded; snapshotted fees on each delta
 - **Non-hookable `claimRefund`** — Open, Funded, and Submitted (after grace) can expire
 
 ### Security
@@ -61,14 +63,14 @@ stateDiagram-v2
 - **Hook gas limit 500_000** — EIP-150 63/64 leftover still applies; callers must over-provision
 - **SafeERC20** + **ReentrancyGuardTransient** (Cancun)
 
-A receiver that advertises `IDisburser` and reverts in `onDisbursement` rolls back `complete`, including fees. Evaluator `reject` refunds the client. Snapshotted treasury that cannot receive tokens has the same recovery path. No admin snapshot repair.
+A receiver that advertises `IDisburser` and reverts in `onDisbursement` rolls back `complete` / `settleClaim` / `approveClaim`, including fees. Evaluator `reject` refunds the client. Snapshotted treasury that cannot receive tokens has the same recovery path. No admin snapshot repair. Floor division on each delta may sum to slightly less fee than one `complete` over the same total.
 
 Do not send ETH; there is no withdraw.
 
 ### Hooks
 
 - **`IERC8183Hook`** — `beforeAction` / `afterAction` with `caller` in the encoded `data`
-- **Hookable:** `setBudget`, `fund`, `submit`, `complete`, `reject`
+- **Hookable:** `setBudget`, `fund`, `submit`, `complete`, `reject`, `submitClaim`, `settleClaim`, `approveClaim`, `rejectClaim`
 - **Not hookable:** `createJob`, `setProvider`, `setPayoutReceiver`, `claimRefund`
 - **`batchDetachHook`** — owner liveness tool; strips `job.hook`
 
@@ -135,6 +137,7 @@ This implementation follows `3rdparty/base-contracts/eip.md` (not the February 2
 | Open → Expired via `claimRefund`; provider may reject Open | MUST |
 | Payout receiver + optional `IDisburser` | MUST |
 | Non-hookable `claimRefund` | MUST |
+| Incremental claim settlement (`submitClaim` / `settleClaim` / `approveClaim` / `rejectClaim`) | MUST |
 | Hook gas 500k; hook `data` encodes `caller` | MUST |
 | Fee snapshot at fund; 50% cap | this kernel |
 | Non-upgradeable; no pause; no admin escrow withdrawal | this kernel |

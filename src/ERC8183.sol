@@ -17,9 +17,9 @@ import {IDisburser} from "./interfaces/IDisburser.sol";
 ///      escrow withdrawal.
 ///
 ///      A payout receiver that advertises `IDisburser` and reverts in
-///      `onDisbursement` rolls back `complete` (including already-performed fee
-///      transfers). Evaluator `reject` refunds the client. The callback is not
-///      gas-capped.
+///      `onDisbursement` rolls back `complete` / `settleClaim` / `approveClaim`
+///      (including already-performed fee transfers). Evaluator `reject` refunds
+///      the client. The callback is not gas-capped.
 ///
 ///      Do not send ETH; there is no withdraw path.
 contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
@@ -101,6 +101,11 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     error GracePeriodActive();
     error UnexpectedFundedAmount();
     error PendingClaimExists();
+    error EmptyDeliverable();
+    error NoNewSettlement();
+    error ExceedsBudget();
+    error ClaimAlreadySubmitted();
+    error NoPendingClaim();
 
     event HookWhitelistUpdated(address indexed hook, bool status);
     event PaymentTokenAllowlistUpdated(address indexed token, bool status);
@@ -457,6 +462,160 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
         emit JobExpired(jobId);
     }
 
+    /// @inheritdoc IERC8183
+    function submitClaim(
+        uint256 jobId,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes calldata optParams
+    ) external nonReentrant {
+        _submitClaim(msg.sender, jobId, cumulativeAmount, deliverable, optParams);
+    }
+
+    function _submitClaim(
+        address actor,
+        uint256 jobId,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes calldata optParams
+    ) internal {
+        JobStorage storage job = _job(jobId);
+        if (actor != job.provider) revert Unauthorized();
+        if (job.status != JobStatus.Funded) revert InvalidStatus(job.status);
+        if (block.timestamp >= job.expiredAt) revert JobAlreadyExpired();
+        if (deliverable == bytes32(0)) revert EmptyDeliverable();
+        if (pendingClaimHash[jobId] != bytes32(0)) revert PendingClaimExists();
+        if (cumulativeAmount <= job.settledAmount) revert NoNewSettlement();
+        if (cumulativeAmount > job.budget) revert ExceedsBudget();
+
+        bytes32 claimHash = _claimHash(cumulativeAmount, deliverable, keccak256(optParams));
+        if (submittedClaimHash[jobId][claimHash]) revert ClaimAlreadySubmitted();
+
+        uint256 delta = cumulativeAmount - job.settledAmount;
+        bytes memory data = abi.encode(actor, cumulativeAmount, deliverable, optParams);
+        _hookBefore(job.hook, jobId, this.submitClaim.selector, data);
+
+        submittedClaimHash[jobId][claimHash] = true;
+        pendingClaimHash[jobId] = claimHash;
+        emit ClaimSubmitted(jobId, actor, cumulativeAmount, delta, deliverable, optParams);
+
+        _hookAfter(job.hook, jobId, this.submitClaim.selector, data);
+    }
+
+    /// @inheritdoc IERC8183
+    function settleClaim(
+        uint256 jobId,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes calldata optParams
+    ) external nonReentrant {
+        _settleClaim(msg.sender, jobId, cumulativeAmount, deliverable, optParams);
+    }
+
+    function _settleClaim(
+        address actor,
+        uint256 jobId,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes calldata optParams
+    ) internal {
+        JobStorage storage job = _job(jobId);
+        if (actor != job.client) revert Unauthorized();
+        if (job.status != JobStatus.Funded) revert InvalidStatus(job.status);
+        if (block.timestamp >= job.expiredAt) revert JobAlreadyExpired();
+        if (cumulativeAmount <= job.settledAmount) revert NoNewSettlement();
+        if (cumulativeAmount > job.budget) revert ExceedsBudget();
+
+        uint256 delta = cumulativeAmount - job.settledAmount;
+        bytes memory data = abi.encode(actor, cumulativeAmount, deliverable, optParams);
+        _hookBefore(job.hook, jobId, this.settleClaim.selector, data);
+
+        job.settledAmount = cumulativeAmount;
+        _distributeSettlement(jobId, job, delta, this.settleClaim.selector, optParams);
+
+        emit Settled(jobId, cumulativeAmount, delta);
+        emit ClaimSettled(jobId, actor, cumulativeAmount, delta, deliverable);
+
+        _hookAfter(job.hook, jobId, this.settleClaim.selector, data);
+    }
+
+    /// @inheritdoc IERC8183
+    function approveClaim(
+        uint256 jobId,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes calldata optParams
+    ) external nonReentrant {
+        _approveClaim(msg.sender, jobId, cumulativeAmount, deliverable, optParams);
+    }
+
+    function _approveClaim(
+        address actor,
+        uint256 jobId,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes calldata optParams
+    ) internal {
+        JobStorage storage job = _job(jobId);
+        if (actor != job.client && actor != job.evaluator) revert Unauthorized();
+        if (job.status != JobStatus.Funded) revert InvalidStatus(job.status);
+
+        bytes32 stored = pendingClaimHash[jobId];
+        if (stored == bytes32(0)) revert NoPendingClaim();
+        if (stored != _claimHash(cumulativeAmount, deliverable, keccak256(optParams))) revert NoPendingClaim();
+        if (cumulativeAmount <= job.settledAmount) revert NoNewSettlement();
+        if (cumulativeAmount > job.budget) revert ExceedsBudget();
+
+        uint256 delta = cumulativeAmount - job.settledAmount;
+        bytes memory data = abi.encode(actor, cumulativeAmount, deliverable, optParams);
+        _hookBefore(job.hook, jobId, this.approveClaim.selector, data);
+
+        delete pendingClaimHash[jobId];
+        job.settledAmount = cumulativeAmount;
+        _distributeSettlement(jobId, job, delta, this.approveClaim.selector, optParams);
+
+        emit Settled(jobId, cumulativeAmount, delta);
+        emit ClaimApproved(jobId, actor, cumulativeAmount, delta, deliverable);
+
+        _hookAfter(job.hook, jobId, this.approveClaim.selector, data);
+    }
+
+    /// @inheritdoc IERC8183
+    function rejectClaim(
+        uint256 jobId,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes32 reason,
+        bytes calldata optParams
+    ) external nonReentrant {
+        _rejectClaim(msg.sender, jobId, cumulativeAmount, deliverable, reason, optParams);
+    }
+
+    function _rejectClaim(
+        address actor,
+        uint256 jobId,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes32 reason,
+        bytes calldata optParams
+    ) internal {
+        JobStorage storage job = _job(jobId);
+        if (actor != job.client && actor != job.evaluator && actor != job.provider) revert Unauthorized();
+        if (job.status != JobStatus.Funded) revert InvalidStatus(job.status);
+
+        bytes32 stored = pendingClaimHash[jobId];
+        if (stored == bytes32(0)) revert NoPendingClaim();
+        if (stored != _claimHash(cumulativeAmount, deliverable, keccak256(optParams))) revert NoPendingClaim();
+
+        bytes memory data = abi.encode(actor, cumulativeAmount, deliverable, reason, optParams);
+        _hookBefore(job.hook, jobId, this.rejectClaim.selector, data);
+
+        delete pendingClaimHash[jobId];
+        emit ClaimRejected(jobId, actor, reason);
+
+        _hookAfter(job.hook, jobId, this.rejectClaim.selector, data);
+    }
+
     function setPlatformFee(
         uint256 newFeeBp
     ) external onlyOwner {
@@ -558,6 +717,14 @@ contract ERC8183 is IERC8183, IERC165, ReentrancyGuardTransient, Ownable2Step {
     ) internal view {
         if (payoutReceiver == address(this)) revert InvalidReceiver();
         if (payoutReceiver != address(0) && payoutReceiver == paymentToken) revert InvalidReceiver();
+    }
+
+    function _claimHash(
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes32 optParamsHash
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encode(cumulativeAmount, deliverable, optParamsHash));
     }
 
     function _distributeSettlement(
