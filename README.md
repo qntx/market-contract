@@ -70,11 +70,12 @@ Do not send ETH; there is no withdraw.
 ### Hooks
 
 - **`IERC8183Hook`** — `beforeAction` / `afterAction` with `caller` in the encoded `data`
+- **`BaseERC8183Hook`** — named virtuals, `IERC8183.*.selector` (fund `0x1f989ec8`), `onlyERC8183` allows `job.hook`
 - **Hookable:** `setBudget`, `fund`, `submit`, `complete`, `reject`, `submitClaim`, `settleClaim`, `approveClaim`, `rejectClaim`
 - **Not hookable:** `createJob`, `setProvider`, `setPayoutReceiver`, `claimRefund`
 - **`batchDetachHook`** — owner liveness tool; strips `job.hook`
 
-Bidding stays off-chain: client `setProvider`, then provider `setBudget`. Third-party `SEL_FUND = fund(uint256,uint256,bytes)` (`0xd2e13f50`) will not route this kernel.
+Bidding stays off-chain: client `setProvider`, then provider `setBudget`. Third-party `SEL_FUND = fund(uint256,uint256,bytes)` (`0xd2e13f50`) will not route this kernel. A BiddingHook cannot open bidding here: `setBudget` is provider-only.
 
 ## Contract Constants
 
@@ -160,11 +161,12 @@ remappings = [
 import {ERC8183} from "market-contract/ERC8183.sol";
 import {IERC8183} from "market-contract/interfaces/IERC8183.sol";
 import {IERC8183Hook} from "market-contract/interfaces/IERC8183Hook.sol";
+import {BaseERC8183Hook} from "market-contract/BaseERC8183Hook.sol";
 ```
 
 ## Hook Development
 
-Implement `IERC8183Hook` and ERC-165-advertise `0x7ff6bc9e`. See [Hook Development Guide](docs/HOOK_DEVELOPMENT.md) for the encoding table, 63/64 leftover, and `SEL_FUND` warning.
+Implement `IERC8183Hook` or inherit `BaseERC8183Hook`. ERC-165-advertise `0x7ff6bc9e`. See [Hook Development Guide](docs/HOOK_DEVELOPMENT.md) for the encoding table, claim virtuals, 63/64 leftover, and `SEL_FUND` warning.
 
 ## License
 

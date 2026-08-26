@@ -2,7 +2,7 @@
 
 Hooks are optional `IERC8183Hook` contracts. The kernel forwards `beforeAction` / `afterAction` with a 500_000 gas stipend. Reverts bubble; hook OOG reverts the parent.
 
-A convenience `BaseERC8183Hook` router is not in this kernel. Implement `IERC8183Hook` directly.
+Implement `IERC8183Hook` directly, or inherit `BaseERC8183Hook` and override the named virtuals.
 
 ## Interface
 
@@ -53,6 +53,8 @@ Selectors passed to hooks are always the canonical kernel selectors (`this.fund.
 
 `fund` is **not** raw `optParams`. Decode `(address, bytes)`.
 
+`rejectClaim` decode is `(address caller, uint256 cumulativeAmount, bytes32 deliverable, bytes32 reason, bytes optParams)`. `reason` is the fourth field.
+
 ## Canonical selectors
 
 | Function | Selector |
@@ -70,6 +72,70 @@ Selectors passed to hooks are always the canonical kernel selectors (`this.fund.
 ### `SEL_FUND` warning
 
 `bytes4(keccak256("fund(uint256,uint256,bytes)"))` is `0xd2e13f50` (February ABI). It **will not match** this kernel. Use `IERC8183.fund.selector` (`0x1f989ec8`). Third-party hook bases that hardcode the old string will miss every `fund` callback.
+
+`3rdparty/hook-contracts/contracts/BaseERC8183Hook.sol` (and `MultiHookRouter`) still use that February `SEL_FUND`. Do not copy those constants. This repo's `src/BaseERC8183Hook.sol` compares against `IERC8183.*.selector` and routes claim functions.
+
+## `BaseERC8183Hook`
+
+Convenience base. Not part of the ERC. Inherit it and override only the virtuals you need.
+
+```solidity
+import {BaseERC8183Hook} from "../src/BaseERC8183Hook.sol";
+
+contract MyHook is BaseERC8183Hook {
+    constructor(address core) BaseERC8183Hook(core) {}
+
+    function _preFund(uint256 jobId, address caller, bytes memory optParams) internal override {
+        // caller is the kernel actor (client for fund)
+    }
+
+    function _preRejectClaim(
+        uint256 jobId,
+        address caller,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes32 reason,
+        bytes memory optParams
+    ) internal override {
+        // reason is decoded from the fourth field
+    }
+}
+```
+
+Pass the **kernel** address as `erc8183Contract`. The base ERC-165-advertises `IERC8183Hook` (`0x7ff6bc9e`) and `IERC165`. Unknown selectors no-op so a newer kernel function does not brick an old hook.
+
+### `onlyERC8183(jobId)`
+
+`beforeAction` / `afterAction` revert `OnlyERC8183Contract` unless:
+
+1. `msg.sender == erc8183Contract` (standalone: kernel calls the hook), or
+2. `msg.sender == IERC8183(erc8183Contract).getJob(jobId).hook` (router: kernel's `job.hook` is the router; the router calls sub-hooks)
+
+A call that is not the kernel, with a **bogus** `jobId`, reverts `JobDoesNotExist` from `getJob` (this kernel does not return a zeroed job). Valid `jobId` and a caller that is neither the kernel nor `job.hook` reverts `OnlyERC8183Contract`.
+
+### Virtuals
+
+Every virtual takes `address caller` first after `jobId`.
+
+| Action | Pre | Post | Decoded after `caller` |
+| ------ | --- | ---- | ---------------------- |
+| `setBudget` | `_preSetBudget` | `_postSetBudget` | `token, amount, optParams` |
+| `fund` | `_preFund` | `_postFund` | `optParams` |
+| `submit` | `_preSubmit` | `_postSubmit` | `deliverable, optParams` |
+| `complete` | `_preComplete` | `_postComplete` | `reason, optParams` |
+| `reject` | `_preReject` | `_postReject` | `reason, optParams` |
+| `submitClaim` | `_preSubmitClaim` | `_postSubmitClaim` | `cumulativeAmount, deliverable, optParams` |
+| `settleClaim` | `_preSettleClaim` | `_postSettleClaim` | `cumulativeAmount, deliverable, optParams` |
+| `approveClaim` | `_preApproveClaim` | `_postApproveClaim` | `cumulativeAmount, deliverable, optParams` |
+| `rejectClaim` | `_preRejectClaim` | `_postRejectClaim` | `cumulativeAmount, deliverable, reason, optParams` |
+
+`createJob`, `setProvider`, `setPayoutReceiver`, and `claimRefund` are not hookable; they never hit these virtuals.
+
+### Bidding / third-party hooks
+
+`setBudget` is **provider-only**. A `BiddingHook` that opens a window via client `setBudget` while `provider == 0` cannot run on this kernel: the client is `Unauthorized`. `setProvider` is not hookable, so bid verification cannot sit there either. Bidding stays off-chain; client `setProvider`, then provider `setBudget`.
+
+Third-party `MultiHookRouter` / `BiddingHook` / `FundTransferHook` / `PrivacyHook` are not vendored here. Point sub-hooks at this `BaseERC8183Hook` (canonical selectors + claim virtuals + router-safe `onlyERC8183`).
 
 ## Gas: 500k stipend and 63/64 leftover
 
