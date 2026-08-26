@@ -27,6 +27,10 @@ ERC-165: advertise `type(IERC8183Hook).interfaceId` (`0x7ff6bc9e` = `beforeActio
 | `submit` | Yes |
 | `complete` | Yes |
 | `reject` | Yes |
+| `submitClaim` | Yes |
+| `settleClaim` | Yes |
+| `approveClaim` | Yes |
+| `rejectClaim` | Yes |
 | `claimRefund` | **No** |
 
 Selectors passed to hooks are always the canonical kernel selectors (`this.fund.selector`, etc.), never `msg.sig`.
@@ -42,6 +46,10 @@ Selectors passed to hooks are always the canonical kernel selectors (`this.fund.
 | `submit` | `abi.encode(address caller, bytes32 deliverable, bytes optParams)` |
 | `complete` | `abi.encode(address caller, bytes32 reason, bytes optParams)` |
 | `reject` | `abi.encode(address caller, bytes32 reason, bytes optParams)` |
+| `submitClaim` | `abi.encode(address caller, uint256 cumulativeAmount, bytes32 deliverable, bytes optParams)` |
+| `settleClaim` | `abi.encode(address caller, uint256 cumulativeAmount, bytes32 deliverable, bytes optParams)` |
+| `approveClaim` | `abi.encode(address caller, uint256 cumulativeAmount, bytes32 deliverable, bytes optParams)` |
+| `rejectClaim` | `abi.encode(address caller, uint256 cumulativeAmount, bytes32 deliverable, bytes32 reason, bytes optParams)` |
 
 `fund` is **not** raw `optParams`. Decode `(address, bytes)`.
 
@@ -54,6 +62,10 @@ Selectors passed to hooks are always the canonical kernel selectors (`this.fund.
 | `submit(uint256,bytes32,bytes)` | `0x9e63798d` |
 | `complete(uint256,bytes32,bytes)` | `0xd75bbdf3` |
 | `reject(uint256,bytes32,bytes)` | `0x41dd26f5` |
+| `submitClaim(uint256,uint256,bytes32,bytes)` | `0x5d0e9ca0` |
+| `settleClaim(uint256,uint256,bytes32,bytes)` | `0xe8bcf104` |
+| `approveClaim(uint256,uint256,bytes32,bytes)` | `0x165fbf71` |
+| `rejectClaim(uint256,uint256,bytes32,bytes32,bytes)` | `0xd127c867` |
 
 ### `SEL_FUND` warning
 
@@ -67,8 +79,9 @@ This is policy, not a bug.
 
 ## Liveness
 
-- `claimRefund` cannot be blocked by a hook.
-- A reverting hook on `setBudget` / `fund` / `submit` / `complete` / `reject` blocks that call until the job expires or the owner calls `batchDetachHook`.
+- `claimRefund` is not hookable.
+- A reverting hook on `setBudget` / `fund` / `submit` / `complete` / `reject` / `submitClaim` / `settleClaim` / `approveClaim` / `rejectClaim` blocks that call.
+- A reverting `rejectClaim` hook can pin a Funded pending claim past `expiredAt` (`claimRefund` → `PendingClaimExists`). Expiry does not clear it. Owner `batchDetachHook`, then `rejectClaim` / `claimRefund`.
 - The client chose the hook at `createJob`.
 
 ## Minimal example

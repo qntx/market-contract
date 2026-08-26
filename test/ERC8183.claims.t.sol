@@ -450,6 +450,13 @@ contract ERC8183ClaimsTest is Test {
         vm.prank(client);
         vm.expectRevert(abi.encodeWithSelector(ERC8183.InvalidStatus.selector, IERC8183.JobStatus.Open));
         core.settleClaim(id, HALF, bytes32(0), "");
+
+        id = _funded();
+        vm.prank(provider);
+        core.submit(id, DELIVERABLE, "");
+        vm.prank(client);
+        vm.expectRevert(abi.encodeWithSelector(ERC8183.InvalidStatus.selector, IERC8183.JobStatus.Submitted));
+        core.settleClaim(id, HALF, bytes32(0), "");
     }
 
     function test_settleClaim_revert_expired() public {
@@ -634,6 +641,13 @@ contract ERC8183ClaimsTest is Test {
         vm.prank(client);
         vm.expectRevert(abi.encodeWithSelector(ERC8183.InvalidStatus.selector, IERC8183.JobStatus.Open));
         core.approveClaim(id, HALF, DELIVERABLE, "");
+
+        id = _funded();
+        vm.prank(provider);
+        core.submit(id, DELIVERABLE, "");
+        vm.prank(client);
+        vm.expectRevert(abi.encodeWithSelector(ERC8183.InvalidStatus.selector, IERC8183.JobStatus.Submitted));
+        core.approveClaim(id, HALF, DELIVERABLE, "");
     }
 
     function test_approveClaim_revert_noPendingClaim() public {
@@ -756,6 +770,14 @@ contract ERC8183ClaimsTest is Test {
         vm.expectRevert(ERC8183.ClaimAlreadySubmitted.selector);
         core.submitClaim(id, HALF, DELIVERABLE, "");
 
+        bytes memory newOpt = hex"01";
+        vm.prank(provider);
+        core.submitClaim(id, HALF, DELIVERABLE, newOpt);
+        assertEq(core.pendingClaimHash(id), _claimHash(HALF, DELIVERABLE, newOpt));
+
+        vm.prank(provider);
+        core.rejectClaim(id, HALF, DELIVERABLE, keccak256("withdrawn"), newOpt);
+
         bytes32 next = keccak256("milestone-2");
         vm.prank(provider);
         core.submitClaim(id, HALF, next, "");
@@ -810,6 +832,13 @@ contract ERC8183ClaimsTest is Test {
         uint256 id = _open();
         vm.prank(client);
         vm.expectRevert(abi.encodeWithSelector(ERC8183.InvalidStatus.selector, IERC8183.JobStatus.Open));
+        core.rejectClaim(id, HALF, DELIVERABLE, REASON, "");
+
+        id = _funded();
+        vm.prank(provider);
+        core.submit(id, DELIVERABLE, "");
+        vm.prank(client);
+        vm.expectRevert(abi.encodeWithSelector(ERC8183.InvalidStatus.selector, IERC8183.JobStatus.Submitted));
         core.rejectClaim(id, HALF, DELIVERABLE, REASON, "");
     }
 
