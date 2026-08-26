@@ -1135,6 +1135,21 @@ contract ERC8183Test is Test {
         assertEq(token.balanceOf(address(core)), 0);
     }
 
+    function test_claimRefund_revert_pendingClaimExists() public {
+        uint256 id = _funded();
+        stdstore.target(address(core)).sig("pendingClaimHash(uint256)").with_key(id).checked_write(bytes32(uint256(1)));
+        vm.warp(core.getJob(id).expiredAt);
+        vm.expectRevert(ERC8183.PendingClaimExists.selector);
+        core.claimRefund(id);
+        _assertStatus(id, IERC8183.JobStatus.Funded);
+        assertEq(core.pendingClaimHash(id), bytes32(uint256(1)));
+
+        vm.prank(evaluator);
+        core.reject(id, REASON, "");
+        assertEq(core.pendingClaimHash(id), bytes32(0));
+        _assertStatus(id, IERC8183.JobStatus.Rejected);
+    }
+
     function test_claimRefund_fromOpen() public {
         uint256 id = _open();
         vm.warp(core.getJob(id).expiredAt);

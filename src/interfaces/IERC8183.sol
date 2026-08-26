@@ -3,8 +3,7 @@ pragma solidity ^0.8.28;
 
 /// @title IERC8183 — Agentic Commerce Protocol
 /// @notice Canonical job-escrow ABI matching `3rdparty/base-contracts/eip.md`.
-/// @dev Claim settlement functions are added in a later layer. `ClaimRejected` is
-///      declared here because `submit` / `reject` already supersede a pending claim.
+/// @dev `ClaimRejected` is emitted when `submit` / `reject` supersede a pending claim.
 interface IERC8183 {
     /// @notice Canonical job lifecycle states.
     enum JobStatus {

@@ -24,6 +24,8 @@ import {ERC8183} from "../src/ERC8183.sol";
 ///   SALT             — CREATE2 salt (optional, defaults to 0x01)
 ///   PAYMENT_TOKEN    — Optional; allowlisted post-deploy (chain-specific)
 contract DeployMultiChain is Script {
+    error AddressMismatch();
+
     function run() external {
         address treasury = vm.envAddress("TREASURY");
         uint256 platformFeeBp = vm.envUint("PLATFORM_FEE_BP");
@@ -45,13 +47,15 @@ contract DeployMultiChain is Script {
         ERC8183 core = new ERC8183{salt: salt}(platformFeeBp, evaluatorFeeBp, treasury, owner);
 
         address paymentToken = vm.envOr("PAYMENT_TOKEN", address(0));
+        bool allowlisted;
         if (paymentToken != address(0) && owner == msg.sender) {
             core.setPaymentTokenAllowed(paymentToken, true);
+            allowlisted = true;
         }
 
         vm.stopBroadcast();
 
-        require(address(core) == predicted, "Address mismatch");
+        if (address(core) != predicted) revert AddressMismatch();
 
         console.log("");
         console.log("ERC8183 deployed at:", address(core));
@@ -59,8 +63,12 @@ contract DeployMultiChain is Script {
         console.log("  platformFeeBp:", platformFeeBp);
         console.log("  evaluatorFeeBp:", evaluatorFeeBp);
         console.log("  owner:", owner);
-        if (paymentToken != address(0)) {
+        if (allowlisted) {
             console.log("  allowlisted token:", paymentToken);
+        } else if (paymentToken != address(0)) {
+            console.log(
+                "  PAYMENT_TOKEN not allowlisted (OWNER is not broadcaster); call setPaymentTokenAllowed after deploy"
+            );
         }
     }
 

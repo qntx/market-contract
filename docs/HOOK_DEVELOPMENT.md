@@ -83,16 +83,18 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 contract ExampleHook is IERC8183Hook {
     address public immutable core;
 
+    error OnlyKernel();
+
     constructor(address core_) {
         core = core_;
     }
 
     function beforeAction(uint256, bytes4, bytes calldata) external view {
-        require(msg.sender == core, "only kernel");
+        if (msg.sender != core) revert OnlyKernel();
     }
 
     function afterAction(uint256, bytes4, bytes calldata) external view {
-        require(msg.sender == core, "only kernel");
+        if (msg.sender != core) revert OnlyKernel();
     }
 
     function supportsInterface(bytes4 id) external pure returns (bool) {

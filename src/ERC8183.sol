@@ -13,8 +13,8 @@ import {IDisburser} from "./interfaces/IDisburser.sol";
 
 /// @title ERC8183 — non-upgradeable Agentic Commerce kernel
 /// @notice Per-job ERC-20 escrow with evaluator attestation.
-/// @dev Trust model vs the UUPS reference: fee snapshot at `fund`, 50% cap,
-///      500k hook gas, no pause, no admin escrow withdrawal.
+/// @dev Fee snapshot at `fund`, 50% cap, 500k hook gas, no pause, no admin
+///      escrow withdrawal.
 ///
 ///      A payout receiver that advertises `IDisburser` and reverts in
 ///      `onDisbursement` rolls back `complete` (including already-performed fee
