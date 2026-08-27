@@ -9,63 +9,70 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.28+-363636?logo=solidity)](https://soliditylang.org/)
 [![Foundry](https://img.shields.io/badge/Built%20with-Foundry-FFDB1C?logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTIgMkw0IDdMMTIgMTJMMjAgN0wxMiAyWiIgZmlsbD0iIzMzMyIvPjwvc3ZnPg==)](https://book.getfoundry.sh/)
-[![Tests](https://img.shields.io/badge/Tests-126%20passed-brightgreen)](test/)
 
-A production-ready, gas-optimized implementation of [ERC-8183: Agentic Commerce](https://eips.ethereum.org/EIPS/eip-8183) — trustless job escrow with evaluator attestation for autonomous agent commerce.
+A non-upgradeable ERC-8183 kernel: per-job ERC-20 escrow with evaluator attestation, role mutex, fund-amount delta check, fee snapshots, and optional hooks.
+
+Spec: [`3rdparty/base-contracts/eip.md`](3rdparty/base-contracts/eip.md).
 
 </div>
 
 ## Overview
 
-ERC-8183 defines a protocol where a **client** locks funds, a **provider** submits work, and an **evaluator** attests completion or rejection. This contract manages the full job lifecycle with strict state machine enforcement, optional hook extensibility, and snapshot-based fee distribution.
+ERC-8183 defines a protocol where a **client** locks funds, a **provider** submits work, and an **evaluator** attests completion or rejection. This kernel implements that state machine with per-job payment tokens, a provider-chosen payout receiver, and an evaluation grace period on Submitted refunds.
 
 ### Job Lifecycle
 
 ```mermaid
 stateDiagram-v2
     [*] --> Open: createJob
-    Open --> Funded: fund (client)
-    Open --> Rejected: reject (client)
+    Open --> Open: setProvider / setBudget / setPayoutReceiver
+    Open --> Funded: fund (client; delta == budget)
+    Open --> Submitted: submit (provider; budget == 0)
+    Open --> Rejected: reject (client or provider)
+    Open --> Expired: claimRefund (anyone, after expiredAt)
     Funded --> Submitted: submit (provider)
     Funded --> Rejected: reject (evaluator)
-    Funded --> Expired: claimRefund (anyone, after expiry)
+    Funded --> Expired: claimRefund (anyone, after expiredAt)
     Submitted --> Completed: complete (evaluator)
     Submitted --> Rejected: reject (evaluator)
-    Submitted --> Expired: claimRefund (anyone, after expiry)
-    Completed --> [*]: payment released to provider
-    Rejected --> [*]: refund to client
-    Expired --> [*]: refund to client
+    Submitted --> Expired: claimRefund (anyone, after expiredAt + grace)
+    Completed --> [*]
+    Rejected --> [*]
+    Expired --> [*]
 ```
 
 ## Features
 
 ### Core Protocol
 
-- **ERC-8183 compliant** — strict adherence to the specification interface (`IERC8183`)
-- **Single ERC-20 escrow** — immutable `PAYMENT_TOKEN` per deployment
-- **Evaluator attestation** — only the evaluator can complete or reject submitted work
-- **Front-running protection** — `fund()` requires `expectedBudget` to match current budget
-- **Expiry enforcement** — cannot fund already-expired jobs; `claimRefund` always available after expiry
-
-### Gas Optimization
-
-- **Storage packing** — `JobStorage` struct optimized to 8 slots with packed fields (`hook + status + expiredAt + fees` in a single slot)
-- **ReentrancyGuardTransient** — EIP-1153 transient storage for cheaper reentrancy protection
-- **Immutable variables** — `PAYMENT_TOKEN` stored in bytecode, zero SLOAD cost
+- **Local-spec ABI** — `createJob(..., hook, providerAgentId)`, provider-only `setBudget(token, amount)`, `fund(expectedToken, expectedBudget)` selector `0x1f989ec8`
+- **Per-job payment token** — admin allowlist; constructor does not take a token
+- **Role mutex** — `client != provider`, `provider != evaluator`. `evaluator == client` is the DIY mode
+- **Fund delta check** — `balanceOf` must increase by exactly `budget` (`UnexpectedFundedAmount` otherwise)
+- **Evaluation grace period** — Submitted `claimRefund` waits `expiredAt + 1 hours`
+- **Payout receiver + IDisburser** — optional callback at payout time (ERC-165, not cached)
+- **Non-hookable `claimRefund`** — Open, Funded, and Submitted (after grace) can expire
 
 ### Security
 
-- **Ownable2Step** — two-step ownership transfer prevents accidental transfers; `renounceOwnership()` is permanently disabled
-- **SafeERC20** — safe token transfers with return value checks
-- **Fee snapshot** — `platformFeeBp`, `evaluatorFeeBp`, and `treasury` captured at `fund()` time, immune to admin changes
-- **Hook gas limit** — 500k gas cap prevents griefing attacks via malicious hooks
-- **Non-hookable `claimRefund`** — funds are always recoverable after expiry, even if the hook is malicious
+- **Non-upgradeable Ownable2Step** — no pause, no `emergencyWithdraw`, `renounceOwnership` disabled
+- **Fee snapshot at `fund`** — `fundedPlatformFeeBp`, `fundedEvaluatorFeeBp`, `fundedTreasury`. Live admin changes do not rewrite in-flight jobs
+- **`MAX_FEE_BP = 5000`** — combined platform + evaluator cap is 50%
+- **Hook gas limit 500_000** — EIP-150 63/64 leftover still applies; callers must over-provision
+- **SafeERC20** + **ReentrancyGuardTransient** (Cancun)
 
-### Hook Extensibility
+A receiver that advertises `IDisburser` and reverts in `onDisbursement` rolls back `complete`, including fees. Evaluator `reject` refunds the client. Snapshotted treasury that cannot receive tokens has the same recovery path. No admin snapshot repair.
 
-- **Optional hooks** — `IACPHook` interface for `beforeAction` / `afterAction` callbacks on 6 core operations
-- **Hook whitelist** — admin-controlled allowlist with ERC-165 interface validation
-- **BaseACPHook** — abstract router that decodes calldata and dispatches to named virtual functions
+Do not send ETH; there is no withdraw.
+
+### Hooks
+
+- **`IERC8183Hook`** — `beforeAction` / `afterAction` with `caller` in the encoded `data`
+- **Hookable:** `setBudget`, `fund`, `submit`, `complete`, `reject`
+- **Not hookable:** `createJob`, `setProvider`, `setPayoutReceiver`, `claimRefund`
+- **`batchDetachHook`** — owner liveness tool; strips `job.hook`
+
+Bidding stays off-chain: client `setProvider`, then provider `setBudget`. Third-party `SEL_FUND = fund(uint256,uint256,bytes)` (`0xd2e13f50`) will not route this kernel.
 
 ## Contract Constants
 
@@ -76,14 +83,15 @@ stateDiagram-v2
 | `HOOK_GAS_LIMIT` | `500_000` | Max gas forwarded to each hook call |
 | `MIN_EXPIRY_DURATION` | `5 minutes` | Minimum job time-to-live |
 | `MAX_DESCRIPTION_LENGTH` | `1024` | Max job description size in bytes |
+| `EVALUATION_GRACE_PERIOD` | `1 hours` | Submitted `claimRefund` wait after `expiredAt` |
 
 ## Quick Start
 
 ### Prerequisites
 
 - [Foundry](https://book.getfoundry.sh/getting-started/installation) (forge ≥ 0.3.0)
-- Solidity 0.8.28+
-- EVM target: Cancun (EIP-1153 transient storage support required)
+- Solidity 0.8.28+ (solc 0.8.34)
+- EVM target: Cancun (EIP-1153)
 
 ### Build
 
@@ -94,55 +102,50 @@ forge build
 ### Test
 
 ```bash
-forge test -vvv
+forge test -vv
 ```
-
-All **126 tests** passing across 4 test suites covering state transitions, role checks, fee calculations, hook interactions, reentrancy protection, gas limits, edge cases, and fuzz testing.
 
 ### Deploy
 
 ```bash
-export PAYMENT_TOKEN=0x...      # ERC-20 token address
 export TREASURY=0x...           # Platform fee recipient
 export PLATFORM_FEE_BP=250      # 2.5% platform fee
 export EVALUATOR_FEE_BP=100     # 1% evaluator fee
+export PAYMENT_TOKEN=0x...      # Optional post-deploy allowlist
 
-forge script script/DeployAgenticCommerce.s.sol:DeployAgenticCommerce \
+forge script script/DeployERC8183.s.sol:DeployERC8183 \
   --rpc-url $RPC_URL --broadcast --verify
 ```
 
-See [Deployment Guide](docs/DEPLOYMENT.md) for full instructions including hardware wallet, Gnosis Safe, multi-chain, and post-deployment verification.
+Same address across chains requires identical bytecode (solc 0.8.34, optimizer 200, `via_ir = false`), identical salt, Arachnid CREATE2 factory, and identical `(platformFeeBp, evaluatorFeeBp, treasury, owner)`. Per-chain tokens are allowlisted after deploy.
+
+See [Deployment Guide](docs/DEPLOYMENT.md).
 
 ## Spec Compliance
 
-This implementation covers all **MUST/SHALL** requirements of ERC-8183:
+This implementation follows `3rdparty/base-contracts/eip.md` (not the February 2026 minimal ABI).
 
 | Requirement | Status |
 | ----------- | ------ |
-| 6 states (Open, Funded, Submitted, Completed, Rejected, Expired) | ✅ |
-| 8 valid state transitions, no others | ✅ |
-| 8 core functions with correct role checks | ✅ |
-| 8 events emitted on corresponding transitions | ✅ |
-| Hook gas limits (500k) | ✅ |
-| Non-hookable `claimRefund` | ✅ |
-| SafeERC20 + ReentrancyGuard | ✅ |
+| Role mutex (`client != provider`, `provider != evaluator`) | MUST |
+| Per-job payment token; provider-only `setBudget(token, amount)` | MUST |
+| `fund(expectedToken, expectedBudget)` selector `0x1f989ec8` | MUST |
+| Fund `balanceOf` delta equals budget | MUST |
+| Evaluation grace period on Submitted `claimRefund` | MUST |
+| Open → Expired via `claimRefund`; provider may reject Open | MUST |
+| Payout receiver + optional `IDisburser` | MUST |
+| Non-hookable `claimRefund` | MUST |
+| Hook gas 500k; hook `data` encodes `caller` | MUST |
+| Fee snapshot at fund; 50% cap | this kernel |
+| Non-upgradeable; no pause; no admin escrow withdrawal | this kernel |
 
-### Beyond Spec
-
-- **Fee snapshot at fund time** — prevents admin fee changes from affecting funded jobs
-- **Expiry check in `fund()`** — cannot fund already-expired jobs
-- **Hook whitelist with ERC-165** — only validated hooks can be attached
-- **Disabled `renounceOwnership()`** — prevents irreversible loss of admin control
+Public getters diverge from the UUPS reference on purpose: `treasury` not `platformTreasury`; `_jobs` is internal; `getJob` / `getFeeSnapshot` revert `JobDoesNotExist`.
 
 ## Installation
-
-Install as a Foundry dependency:
 
 ```bash
 forge install qntx/market-contract
 ```
-
-Add the remapping to your `foundry.toml`:
 
 ```toml
 remappings = [
@@ -150,40 +153,15 @@ remappings = [
 ]
 ```
 
-Import in your contracts:
-
 ```solidity
-import {AgenticCommerce} from "market-contract/AgenticCommerce.sol";
-import {BaseACPHook} from "market-contract/BaseACPHook.sol";
+import {ERC8183} from "market-contract/ERC8183.sol";
 import {IERC8183} from "market-contract/interfaces/IERC8183.sol";
-import {IACPHook} from "market-contract/interfaces/IACPHook.sol";
+import {IERC8183Hook} from "market-contract/interfaces/IERC8183Hook.sol";
 ```
 
 ## Hook Development
 
-Extend protocol functionality by implementing `IACPHook` via `BaseACPHook`:
-
-```solidity
-import {BaseACPHook} from "market-contract/BaseACPHook.sol";
-
-contract MyHook is BaseACPHook {
-    constructor(address acp) BaseACPHook(acp) {}
-
-    function _preFund(uint256 jobId, bytes memory optParams) internal override {
-        // Custom validation — revert to block the fund operation
-    }
-
-    function _postComplete(
-        uint256 jobId, bytes32 reason, bytes memory optParams
-    ) internal override {
-        // Post-completion logic — state and transfers already finalized
-    }
-}
-```
-
-Register hooks via `setHookWhitelist(address, true)` before attaching to jobs.
-
-See [Hook Development Guide](docs/HOOK_DEVELOPMENT.md) for the complete reference including cookbook patterns, security guidelines, and advanced topics.
+Implement `IERC8183Hook` and ERC-165-advertise `0x7ff6bc9e`. See [Hook Development Guide](docs/HOOK_DEVELOPMENT.md) for the encoding table, 63/64 leftover, and `SEL_FUND` warning.
 
 ## License
 

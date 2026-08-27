@@ -1,27 +1,25 @@
 #!/bin/bash
 set -e
 
-# Multi-chain deployment script for AgenticCommerce
-# Uses CREATE2 for deterministic addresses across all chains
+# Multi-chain CREATE2 deployment for ERC8183.
+# Constructor args are (platformFeeBp, evaluatorFeeBp, treasury, owner).
+# Per-chain payment tokens are allowlisted post-deploy, not baked into CREATE2.
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
 echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  AgenticCommerce Multi-Chain Deployment${NC}"
+echo -e "${GREEN}  ERC8183 Multi-Chain Deployment${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
 
-# Common parameters (same across all chains)
 export TREASURY="${TREASURY:?TREASURY env var required}"
 export PLATFORM_FEE_BP="${PLATFORM_FEE_BP:-250}"
 export EVALUATOR_FEE_BP="${EVALUATOR_FEE_BP:-100}"
 export OWNER="${OWNER:-$TREASURY}"
 export SALT="${SALT:-0x0000000000000000000000000000000000000000000000000000000000000001}"
 
-# Chain configurations
 # Format: CHAIN_NAME|RPC_URL|PAYMENT_TOKEN|ETHERSCAN_API_KEY
 declare -a CHAINS=(
     # Uncomment and configure the chains you want to deploy to:
@@ -32,7 +30,6 @@ declare -a CHAINS=(
     # "polygon|$POLYGON_RPC_URL|0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359|$POLYGONSCAN_API_KEY"
 )
 
-# Check if any chains configured
 if [ ${#CHAINS[@]} -eq 0 ]; then
     echo -e "${YELLOW}No chains configured. Edit this script to add chain configurations.${NC}"
     echo ""
@@ -46,14 +43,14 @@ FAILED=()
 
 for chain_config in "${CHAINS[@]}"; do
     IFS='|' read -r CHAIN_NAME RPC_URL PAYMENT_TOKEN EXPLORER_API_KEY <<< "$chain_config"
-    
+
     echo ""
     echo -e "${YELLOW}Deploying to ${CHAIN_NAME}...${NC}"
     echo "  RPC: ${RPC_URL:0:50}..."
-    echo "  Payment Token: $PAYMENT_TOKEN"
-    
+    echo "  Payment Token (post-deploy allowlist): $PAYMENT_TOKEN"
+
     export PAYMENT_TOKEN
-    
+
     if forge script script/DeployMultiChain.s.sol:DeployMultiChain \
         --rpc-url "$RPC_URL" \
         --broadcast \
