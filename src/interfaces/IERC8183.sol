@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 /// @title IERC8183 — Agentic Commerce Protocol
-/// @notice Canonical job-escrow ABI matching `3rdparty/base-contracts/eip.md`.
+/// @notice Canonical job-escrow ABI implemented by this ERC-8183 kernel.
 interface IERC8183 {
     /// @notice Canonical job lifecycle states.
     enum JobStatus {

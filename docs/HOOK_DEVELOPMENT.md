@@ -71,9 +71,11 @@ Selectors passed to hooks are always the canonical kernel selectors (`this.fund.
 
 ### `SEL_FUND` warning
 
-`bytes4(keccak256("fund(uint256,uint256,bytes)"))` is `0xd2e13f50` (February ABI). It **will not match** this kernel. Use `IERC8183.fund.selector` (`0x1f989ec8`). Third-party hook bases that hardcode the old string will miss every `fund` callback.
-
-`3rdparty/hook-contracts/contracts/BaseERC8183Hook.sol` (and `MultiHookRouter`) still use that February `SEL_FUND`. Do not copy those constants. This repo's `src/BaseERC8183Hook.sol` compares against `IERC8183.*.selector` and routes claim functions.
+`bytes4(keccak256("fund(uint256,uint256,bytes)"))` is `0xd2e13f50` (February ERC
+`fund(jobId, expectedBudget, optParams)`). It **will not match** this kernel. Use
+`IERC8183.fund.selector` (`0x1f989ec8`). Third-party hook bases that hardcode the
+old string miss every `fund` callback. This repo's `src/BaseERC8183Hook.sol` compares
+against `IERC8183.*.selector` and routes claim functions.
 
 ## `BaseERC8183Hook`
 
