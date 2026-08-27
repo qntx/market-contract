@@ -18,9 +18,9 @@ Do not send ETH; there is no withdraw path.
 
 | Role | Binding | May | Must not |
 | ---- | ------- | --- | -------- |
-| Client | `createJob` caller | `setProvider` while Open and provider is 0; `fund`; `reject` while Open | Be the provider |
-| Provider | creation or `setProvider` | `setBudget`, `setPayoutReceiver` while Open; `submit`; `reject` while Open | Be the client or evaluator; `complete`; job `reject` once Funded |
-| Evaluator | immutable at creation | `complete` / `reject` when Submitted; `reject` when Funded | Be the provider |
+| Client | `createJob` caller | `setProvider` while Open and provider is 0; `fund`; `reject` while Open; `settleClaim`; `approveClaim` / `rejectClaim` | Be the provider |
+| Provider | creation or `setProvider` | `setBudget`, `setPayoutReceiver` while Open; `submit`; `submitClaim`; `rejectClaim` (withdraw own claim); `reject` while Open | Be the client or evaluator; `complete`; job `reject` once Funded |
+| Evaluator | immutable at creation | `complete` / `reject` when Submitted; `reject` when Funded; `approveClaim` / `rejectClaim` | Be the provider; `settleClaim`; originate amounts the provider did not claim |
 | Owner | Ownable2Step | fees (capped), treasury, hook whitelist, token allowlist, `batchDetachHook` | Withdraw escrow; pause refunds; mutate snapshots of funded jobs |
 | Anyone | — | `claimRefund` under expiry/grace/pending-claim rules | — |
 
@@ -78,7 +78,7 @@ After `expiredAt`, anyone `claimRefund`. No tokens move (nothing escrowed). Prov
 
 After `expiredAt`, anyone `claimRefund`. Remainder (`budget - settledAmount`) returns to the client. No grace period.
 
-A pending claim on Funded reverts `PendingClaimExists` even after expiry. Recovery: `rejectClaim` (Layer 1) then `claimRefund`, or evaluator job `reject`. Kernel `submit` / job `reject` already clear a pending claim.
+A pending claim on Funded reverts `PendingClaimExists` even after expiry. Recovery: `rejectClaim` then `claimRefund`, or evaluator job `reject`. Kernel `submit` / job `reject` already clear a pending claim.
 
 ### Submitted
 
@@ -86,7 +86,7 @@ A pending claim on Funded reverts `PendingClaimExists` even after expiry. Recove
 
 ### IDisburser liveness
 
-If `payoutReceiver` advertises `IDisburser` and `onDisbursement` reverts, `complete` rolls back including fee transfers. Provider-chosen risk. Evaluator `reject` refunds the client. The callback is not gas-capped. Support is probed at payout time (not cached) so an EOA that later has code (EIP-7702) can become a disburser.
+If `payoutReceiver` advertises `IDisburser` and `onDisbursement` reverts, `complete` / `settleClaim` / `approveClaim` roll back including fee transfers. Provider-chosen risk. Evaluator `reject` refunds the client. The callback is not gas-capped. Support is probed at payout time (not cached) so an EOA that later has code (EIP-7702) can become a disburser.
 
 ---
 
@@ -98,7 +98,11 @@ If `payoutReceiver` advertises `IDisburser` and `onDisbursement` reverts, `compl
 | `PaymentReleased` / `PlatformFeePaid` / `EvaluatorFeePaid` | amounts `> 0` only |
 | `Disbursed` | IDisburser callback succeeded |
 | `Refunded` | client remainder |
-| `ClaimRejected` | pending claim superseded (`submit` sentinel `bytes32("superseded-by-submit")` or job `reject` reason) |
+| `Settled` | `settledAmount` increased (`settleClaim` / `approveClaim`) |
+| `ClaimSubmitted` | pending claim filed; includes `optParams` |
+| `ClaimSettled` | client `settleClaim` |
+| `ClaimApproved` | pending claim approved |
+| `ClaimRejected` | pending rejected, withdrawn, or superseded (`submit` sentinel `bytes32("superseded-by-submit")`, job `reject` reason, or `rejectClaim` reason) |
 | `HookDetached` | incident |
 | `PaymentTokenAllowlistUpdated` / `HookWhitelistUpdated` / fee / treasury / ownership | admin |
 
@@ -120,7 +124,7 @@ No pause. Recovery is `reject` / `claimRefund` / `batchDetachHook`.
 | Case | Action |
 | ---- | ------ |
 | Malicious hook reverts hookable calls | `batchDetachHook`; `claimRefund` is never hookable |
-| Pending claim + reverting claim hook (Layer 1) | detach, then `rejectClaim` / `claimRefund` |
+| Pending claim + reverting `rejectClaim` hook | detach, then `rejectClaim` / `claimRefund` |
 | Reverting IDisburser | evaluator `reject` |
 | Broken snapshotted treasury | evaluator `reject` / `claimRefund` |
 | Compromised owner | Ownable2Step delays takeover; attacker can change live fees (capped 50%), treasury, allowlists, detach hooks; cannot drain escrow |

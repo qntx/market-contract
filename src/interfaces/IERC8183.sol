@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 /// @title IERC8183 — Agentic Commerce Protocol
 /// @notice Canonical job-escrow ABI matching `3rdparty/base-contracts/eip.md`.
-/// @dev `ClaimRejected` is emitted when `submit` / `reject` supersede a pending claim.
 interface IERC8183 {
     /// @notice Canonical job lifecycle states.
     enum JobStatus {
@@ -81,6 +80,29 @@ interface IERC8183 {
     /// @notice Emitted when escrow remainder is returned to the client.
     event Refunded(uint256 indexed jobId, address indexed client, uint256 amount);
 
+    /// @notice Emitted when `settledAmount` increases via `settleClaim` or `approveClaim`.
+    event Settled(uint256 indexed jobId, uint256 cumulativeAmount, uint256 delta);
+
+    /// @notice Emitted when the provider files a pending claim. `optParams` is the preimage.
+    event ClaimSubmitted(
+        uint256 indexed jobId,
+        address indexed provider,
+        uint256 cumulativeAmount,
+        uint256 delta,
+        bytes32 deliverable,
+        bytes optParams
+    );
+
+    /// @notice Emitted after a client `settleClaim`. `deliverable` is the client's attestation.
+    event ClaimSettled(
+        uint256 indexed jobId, address indexed settler, uint256 cumulativeAmount, uint256 delta, bytes32 deliverable
+    );
+
+    /// @notice Emitted after a pending claim is approved.
+    event ClaimApproved(
+        uint256 indexed jobId, address indexed approver, uint256 cumulativeAmount, uint256 delta, bytes32 deliverable
+    );
+
     /// @notice Emitted when a pending claim is rejected, withdrawn, or superseded.
     event ClaimRejected(uint256 indexed jobId, address indexed rejector, bytes32 reason);
 
@@ -154,6 +176,39 @@ interface IERC8183 {
     /// @notice Permissionless refund after expiry. Not hookable.
     function claimRefund(
         uint256 jobId
+    ) external;
+
+    /// @notice Provider files a pending claim against a Funded job. No token movement.
+    function submitClaim(
+        uint256 jobId,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes calldata optParams
+    ) external;
+
+    /// @notice Client unilaterally settles a cumulative amount. Does not consume a pending claim.
+    function settleClaim(
+        uint256 jobId,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes calldata optParams
+    ) external;
+
+    /// @notice Client or evaluator approves the pending claim. No expiry check.
+    function approveClaim(
+        uint256 jobId,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes calldata optParams
+    ) external;
+
+    /// @notice Client, evaluator, or provider rejects or withdraws the pending claim. No expiry check.
+    function rejectClaim(
+        uint256 jobId,
+        uint256 cumulativeAmount,
+        bytes32 deliverable,
+        bytes32 reason,
+        bytes calldata optParams
     ) external;
 
     /// @notice Canonical job view. Reverts `JobDoesNotExist` for unknown ids.

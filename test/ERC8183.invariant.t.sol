@@ -24,6 +24,9 @@ contract ERC8183Handler is Test {
     mapping(uint256 jobId => uint16 evaluatorFeeBp) public ghostEval;
     mapping(uint256 jobId => address treasury_) public ghostTreasury;
     mapping(uint256 jobId => bool funded) public ghostFunded;
+    mapping(uint256 jobId => uint256 amt) public ghostPendingAmt;
+    mapping(uint256 jobId => bytes32 deliv) public ghostPendingDeliv;
+    uint256 public claimNonce;
 
     constructor(
         ERC8183 core_,
@@ -195,11 +198,82 @@ contract ERC8183Handler is Test {
         uint256 minTs = j.expiredAt;
         if (j.status == IERC8183.JobStatus.Submitted) {
             minTs = uint256(j.expiredAt) + core.EVALUATION_GRACE_PERIOD();
+        } else if (core.pendingClaimHash(id) != bytes32(0)) {
+            return;
         }
         if (block.timestamp < minTs) {
             vm.warp(minTs);
         }
         core.claimRefund(id);
+    }
+
+    function submitClaim(
+        uint256 seed,
+        uint256 amount
+    ) external {
+        if (jobIds.length == 0) return;
+        uint256 id = jobIds[seed % jobIds.length];
+        IERC8183.Job memory j = core.getJob(id);
+        if (j.status != IERC8183.JobStatus.Funded) return;
+        if (block.timestamp >= j.expiredAt) return;
+        if (core.pendingClaimHash(id) != bytes32(0)) return;
+        if (j.budget == 0 || j.settledAmount >= j.budget) return;
+        amount = bound(amount, j.settledAmount + 1, j.budget);
+        bytes32 deliv = bytes32(++claimNonce);
+        vm.prank(j.provider);
+        core.submitClaim(id, amount, deliv, "");
+        ghostPendingAmt[id] = amount;
+        ghostPendingDeliv[id] = deliv;
+    }
+
+    function settleClaim(
+        uint256 seed,
+        uint256 amount
+    ) external {
+        if (jobIds.length == 0) return;
+        uint256 id = jobIds[seed % jobIds.length];
+        IERC8183.Job memory j = core.getJob(id);
+        if (j.status != IERC8183.JobStatus.Funded) return;
+        if (block.timestamp >= j.expiredAt) return;
+        if (j.budget == 0 || j.settledAmount >= j.budget) return;
+        amount = bound(amount, j.settledAmount + 1, j.budget);
+        vm.prank(j.client);
+        core.settleClaim(id, amount, bytes32(0), "");
+    }
+
+    function approveClaim(
+        uint256 seed
+    ) external {
+        if (jobIds.length == 0) return;
+        uint256 id = jobIds[seed % jobIds.length];
+        IERC8183.Job memory j = core.getJob(id);
+        if (j.status != IERC8183.JobStatus.Funded) return;
+        bytes32 pending = core.pendingClaimHash(id);
+        if (pending == bytes32(0)) return;
+        if (keccak256(abi.encode(ghostPendingAmt[id], ghostPendingDeliv[id], keccak256(""))) != pending) return;
+        if (ghostPendingAmt[id] <= j.settledAmount) return;
+        address actor = seed % 2 == 0 ? j.client : j.evaluator;
+        vm.prank(actor);
+        core.approveClaim(id, ghostPendingAmt[id], ghostPendingDeliv[id], "");
+    }
+
+    function rejectClaim(
+        uint256 seed
+    ) external {
+        if (jobIds.length == 0) return;
+        uint256 id = jobIds[seed % jobIds.length];
+        IERC8183.Job memory j = core.getJob(id);
+        if (j.status != IERC8183.JobStatus.Funded) return;
+        bytes32 pending = core.pendingClaimHash(id);
+        if (pending == bytes32(0)) return;
+        if (keccak256(abi.encode(ghostPendingAmt[id], ghostPendingDeliv[id], keccak256(""))) != pending) return;
+        address actor;
+        uint256 which = seed % 3;
+        if (which == 0) actor = j.client;
+        else if (which == 1) actor = j.evaluator;
+        else actor = j.provider;
+        vm.prank(actor);
+        core.rejectClaim(id, ghostPendingAmt[id], ghostPendingDeliv[id], bytes32(seed), "");
     }
 
     function setFees(
@@ -250,7 +324,7 @@ contract ERC8183InvariantTest is Test {
         handler = new ERC8183Handler(core, tokenA, tokenB, owner, treasury);
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](12);
+        bytes4[] memory selectors = new bytes4[](16);
         selectors[0] = ERC8183Handler.createJob.selector;
         selectors[1] = ERC8183Handler.createJobNoProvider.selector;
         selectors[2] = ERC8183Handler.setProvider.selector;
@@ -263,6 +337,10 @@ contract ERC8183InvariantTest is Test {
         selectors[9] = ERC8183Handler.claimRefund.selector;
         selectors[10] = ERC8183Handler.setFees.selector;
         selectors[11] = ERC8183Handler.setTreasury.selector;
+        selectors[12] = ERC8183Handler.submitClaim.selector;
+        selectors[13] = ERC8183Handler.settleClaim.selector;
+        selectors[14] = ERC8183Handler.approveClaim.selector;
+        selectors[15] = ERC8183Handler.rejectClaim.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
