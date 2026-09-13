@@ -4,7 +4,7 @@
 
 Non-upgradeable per-job ERC-20 escrow with evaluator attestation.
 
-See [docs/](docs/).
+See [notes/](notes/).
 
 ## License
 
